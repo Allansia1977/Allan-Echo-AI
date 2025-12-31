@@ -13,6 +13,7 @@ const Recorder: React.FC<RecorderProps> = ({ onRecordingComplete, status }) => {
   const chunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<number | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
 
   useEffect(() => {
     if (isRecording) {
@@ -28,18 +29,37 @@ const Recorder: React.FC<RecorderProps> = ({ onRecordingComplete, status }) => {
     };
   }, [isRecording]);
 
+  const initAudioEngine = async () => {
+    if (!audioContextRef.current) {
+      const AudioContextClass = (window as any).AudioContext || (window as any).webkitAudioContext;
+      audioContextRef.current = new AudioContextClass();
+    }
+    if (audioContextRef.current?.state === 'suspended') {
+      await audioContextRef.current.resume();
+    }
+  };
+
   const startRecording = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // Step 1: Warm up the audio engine (Critical for iOS)
+      await initAudioEngine();
+
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        } 
+      });
       streamRef.current = stream;
       
-      const mimeType = MediaRecorder.isTypeSupported('audio/webm') 
-        ? 'audio/webm' 
-        : 'audio/mp4';
+      // Step 2: Select the correct codec for the OS
+      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
+      const mimeType = isIOS ? 'audio/mp4' : (MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/mp4');
         
       const mediaRecorder = new MediaRecorder(stream, { 
         mimeType,
-        audioBitsPerSecond: 32000 
+        audioBitsPerSecond: 64000 
       });
       
       mediaRecorderRef.current = mediaRecorder;
@@ -50,21 +70,26 @@ const Recorder: React.FC<RecorderProps> = ({ onRecordingComplete, status }) => {
       };
 
       mediaRecorder.onstop = () => {
-        const audioBlob = new Blob(chunksRef.current, { type: mimeType });
-        onRecordingComplete(audioBlob, seconds);
+        if (chunksRef.current.length > 0) {
+          const audioBlob = new Blob(chunksRef.current, { type: mimeType });
+          onRecordingComplete(audioBlob, seconds);
+        }
         stream.getTracks().forEach(track => track.stop());
       };
 
-      mediaRecorder.start();
+      // Step 3: Start with small timeslice for better mobile stability
+      mediaRecorder.start(250);
       setIsRecording(true);
     } catch (err) {
       console.error("Mic access denied:", err);
-      alert("Microphone permission is required for AllanEcho AI.");
+      alert("Please check Settings > Safari > Microphone on your iPhone.");
     }
   };
 
   const stopRecording = () => {
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      // Flush buffer for iOS
+      mediaRecorderRef.current.requestData();
       mediaRecorderRef.current.stop();
       setIsRecording(false);
     }
@@ -88,20 +113,18 @@ const Recorder: React.FC<RecorderProps> = ({ onRecordingComplete, status }) => {
         </div>
       )}
 
-      {/* Header text container - kept well within bounds */}
       <div className="relative z-10 w-full px-4 text-center mb-8">
         <div className="flex items-center justify-center gap-2 mb-1.5">
             {isRecording && <div className="w-1.5 h-1.5 bg-red-500 rounded-full animate-ping"></div>}
             <h2 className="text-xl font-black text-slate-100 uppercase tracking-tight">
-                {isRecording ? "Live Capture" : isProcessing ? "AI Distilling..." : "AllanEcho AI"}
+                {isRecording ? "Listening..." : isProcessing ? "AI Thinking..." : "Ready to Record"}
             </h2>
         </div>
         <p className="text-slate-500 text-[10px] uppercase font-black tracking-widest leading-none">
-          {isRecording ? "Listening to Voice" : isProcessing ? "Quantum logic active" : "Think out loud"}
+          {isRecording ? "Capturing voice data" : isProcessing ? "Processing neural path" : "Tap to start memo"}
         </p>
       </div>
 
-      {/* Mic Button Section */}
       <div className="relative z-10 flex flex-col items-center">
         <div className="relative">
           {isRecording && (
@@ -133,7 +156,6 @@ const Recorder: React.FC<RecorderProps> = ({ onRecordingComplete, status }) => {
           </button>
         </div>
 
-        {/* Timer: Shifted up to be exactly 0.2cm (approx 8px/mt-2) below the button */}
         <div className={`mt-2 text-2xl font-mono font-black transition-all duration-300 ${isRecording ? 'text-white scale-110 tracking-widest' : 'text-slate-800 opacity-20'}`}>
           {formatTime(seconds)}
         </div>
