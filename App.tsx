@@ -50,7 +50,6 @@ const App: React.FC = () => {
 
   const requestPermission = async () => {
     try {
-      // Create and resume AudioContext immediately on user gesture to unlock iOS audio
       const AudioContextClass = (window as any).AudioContext || (window as any).webkitAudioContext;
       const audioCtx = new AudioContextClass();
       if (audioCtx.state === 'suspended') {
@@ -171,7 +170,6 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* Header with adjusted padding for iPhone dynamic island */}
       <header className="flex-none max-w-xl w-full mx-auto px-6 pt-[env(safe-area-inset-top,44px)] pb-1 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 bg-indigo-500 rounded-lg flex items-center justify-center shadow-lg shadow-indigo-500/20">
@@ -202,9 +200,9 @@ const App: React.FC = () => {
         </div>
       </header>
 
-      <main className={`flex-1 overflow-y-auto no-scrollbar max-w-xl w-full mx-auto px-4 pt-1 ${activeTab === 'translate' ? 'overflow-hidden' : 'pb-32'}`}>
+      <main className={`flex-1 overflow-y-auto no-scrollbar max-w-xl w-full mx-auto px-4 ${activeTab === 'translate' ? 'overflow-hidden flex flex-col' : 'pb-32'}`}>
         {activeTab === 'translate' && (
-          <div className="h-full flex flex-col animate-in fade-in slide-in-from-bottom-4 duration-400 overflow-hidden">
+          <div className="flex-1 flex flex-col min-h-0 animate-in fade-in slide-in-from-bottom-4 duration-400">
              <Translator status={status} setStatus={setStatus} />
           </div>
         )}
@@ -217,7 +215,7 @@ const App: React.FC = () => {
 
         {activeTab === 'library' && (
           <div className="animate-in fade-in slide-in-from-bottom-4 duration-400">
-            <div className="mb-3 flex items-center justify-between px-2">
+            <div className="mb-3 flex items-center justify-between px-2 pt-2">
               <h2 className="text-[9px] font-black text-slate-500 uppercase tracking-[0.2em]">Storage</h2>
               <span className="text-[9px] font-bold text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded-full border border-indigo-500/20">{memos.length} FILES</span>
             </div>
@@ -236,7 +234,7 @@ const App: React.FC = () => {
         )}
 
         {activeTab === 'settings' && (
-          <div className="animate-in fade-in slide-in-from-bottom-4 duration-300 bg-slate-900/80 rounded-3xl p-6 border border-slate-800">
+          <div className="animate-in fade-in slide-in-from-bottom-4 duration-300 bg-slate-900/80 rounded-3xl p-6 border border-slate-800 mt-2">
             <h2 className="text-base font-bold text-slate-100 mb-1">Configuration</h2>
             <p className="text-slate-500 text-[10px] mb-4 uppercase tracking-widest">Optimized for iPhone 16 Pro Max</p>
             <div className="p-3 bg-slate-950/50 rounded-xl flex justify-between items-center border border-slate-800/50">
@@ -247,11 +245,11 @@ const App: React.FC = () => {
         )}
       </main>
       
-      {/* Dynamic Safe Area Footer */}
-      <footer className="flex-none bg-slate-950/95 backdrop-blur-3xl border-t border-slate-900/50 flex items-center justify-around z-50 px-2 pt-2 pb-[max(1.5rem,env(safe-area-inset-bottom))] shadow-[0_-10px_40px_rgba(0,0,0,0.5)]">
+      {/* Shifted footer up by 12px (0.3cm) via extra padding-bottom */}
+      <footer className="flex-none bg-slate-950/95 backdrop-blur-3xl border-t border-slate-900/50 flex items-center justify-around z-50 px-2 pt-1.5 pb-[calc(max(1rem,env(safe-area-inset-bottom))+12px)] shadow-[0_-10px_40px_rgba(0,0,0,0.5)]">
         <button onClick={() => setActiveTab('translate')} className={`flex flex-col items-center gap-0.5 transition-all flex-1 relative ${activeTab === 'translate' ? 'text-indigo-400' : 'text-slate-600'}`}>
-          {activeTab === 'translate' && <div className="absolute -top-2 w-8 h-0.5 bg-indigo-500 rounded-full shadow-[0_0_12px_#6366f1]"></div>}
-          <div className="p-1.5">
+          {activeTab === 'translate' && <div className="absolute -top-1.5 w-8 h-0.5 bg-indigo-500 rounded-full shadow-[0_0_12px_#6366f1]"></div>}
+          <div className="p-1">
             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10M12.751 5C11.783 10.77 8.07 15.61 3 18.129" />
             </svg>
@@ -260,8 +258,8 @@ const App: React.FC = () => {
         </button>
 
         <button onClick={() => setActiveTab('record')} className={`flex flex-col items-center gap-0.5 transition-all flex-1 relative ${activeTab === 'record' ? 'text-indigo-400' : 'text-slate-600'}`}>
-          {activeTab === 'record' && <div className="absolute -top-2 w-8 h-0.5 bg-indigo-500 rounded-full shadow-[0_0_12px_#6366f1]"></div>}
-          <div className="p-1.5">
+          {activeTab === 'record' && <div className="absolute -top-1.5 w-8 h-0.5 bg-indigo-500 rounded-full shadow-[0_0_12px_#6366f1]"></div>}
+          <div className="p-1">
             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-20a3 3 0 00-3 3v10a3 3 0 003 3 3 3 0 003-3V5a3 3 0 00-3-3z" />
             </svg>
@@ -270,8 +268,8 @@ const App: React.FC = () => {
         </button>
         
         <button onClick={() => setActiveTab('library')} className={`flex flex-col items-center gap-0.5 transition-all flex-1 relative ${activeTab === 'library' ? 'text-indigo-400' : 'text-slate-600'}`}>
-          {activeTab === 'library' && <div className="absolute -top-2 w-8 h-0.5 bg-indigo-500 rounded-full shadow-[0_0_12px_#6366f1]"></div>}
-          <div className="p-1.5">
+          {activeTab === 'library' && <div className="absolute -top-1.5 w-8 h-0.5 bg-indigo-500 rounded-full shadow-[0_0_12px_#6366f1]"></div>}
+          <div className="p-1">
             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
             </svg>
@@ -280,8 +278,8 @@ const App: React.FC = () => {
         </button>
         
         <button onClick={() => setActiveTab('settings')} className={`flex flex-col items-center gap-0.5 transition-all flex-1 relative ${activeTab === 'settings' ? 'text-indigo-400' : 'text-slate-600'}`}>
-          {activeTab === 'settings' && <div className="absolute -top-2 w-8 h-0.5 bg-indigo-500 rounded-full shadow-[0_0_12px_#6366f1]"></div>}
-          <div className="p-1.5">
+          {activeTab === 'settings' && <div className="absolute -top-1.5 w-8 h-0.5 bg-indigo-500 rounded-full shadow-[0_0_12px_#6366f1]"></div>}
+          <div className="p-1">
             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
             </svg>
