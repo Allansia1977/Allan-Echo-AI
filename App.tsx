@@ -245,8 +245,7 @@ const App: React.FC = () => {
         )}
       </main>
       
-      {/* Shifted footer up by 12px (0.3cm) via extra padding-bottom */}
-      <footer className="flex-none bg-slate-950/95 backdrop-blur-3xl border-t border-slate-900/50 flex items-center justify-around z-50 px-2 pt-1.5 pb-[calc(max(1rem,env(safe-area-inset-bottom))+12px)] shadow-[0_-10px_40px_rgba(0,0,0,0.5)]">
+      <footer className="flex-none bg-slate-950/95 backdrop-blur-3xl border-t border-slate-900/50 flex items-center justify-around z-50 px-2 pt-1.5 pb-[calc(max(1rem,env(safe-area-inset-bottom))+16px)] shadow-[0_-10px_40px_rgba(0,0,0,0.5)]">
         <button onClick={() => setActiveTab('translate')} className={`flex flex-col items-center gap-0.5 transition-all flex-1 relative ${activeTab === 'translate' ? 'text-indigo-400' : 'text-slate-600'}`}>
           {activeTab === 'translate' && <div className="absolute -top-1.5 w-8 h-0.5 bg-indigo-500 rounded-full shadow-[0_0_12px_#6366f1]"></div>}
           <div className="p-1">

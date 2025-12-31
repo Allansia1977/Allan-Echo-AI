@@ -29,7 +29,6 @@ const Translator: React.FC<TranslatorProps> = ({ status, setStatus }) => {
   const chunksRef = useRef<Blob[]>([]);
   const timerIntervalRef = useRef<number | null>(null);
   const pressStartTimeRef = useRef<number>(0);
-  const uiFeedbackTimeoutRef = useRef<number | null>(null);
   const activeStreamRef = useRef<MediaStream | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   
@@ -43,7 +42,6 @@ const Translator: React.FC<TranslatorProps> = ({ status, setStatus }) => {
     setUploadProgress(false);
   };
 
-  // Ensure AudioContext is ready for iOS
   const initAudioContext = () => {
     if (!audioContextRef.current) {
       const AudioContextClass = (window as any).AudioContext || (window as any).webkitAudioContext;
@@ -90,23 +88,23 @@ const Translator: React.FC<TranslatorProps> = ({ status, setStatus }) => {
   const startRecording = async () => {
     if (isBusy) return;
     
-    // Critical: Resume AudioContext on user gesture
+    // Immediate activation for iOS gesture requirements
+    setIsPressing(true);
     initAudioContext();
 
     if (!navigator.onLine) {
-        alert("Connectivity error.");
+        alert("Check internet connection.");
+        resetUIState();
         return;
     }
 
     pressStartTimeRef.current = Date.now();
     chunksRef.current = [];
     
-    uiFeedbackTimeoutRef.current = window.setTimeout(() => {
-      setIsPressing(true);
-      setTimer(0);
-      if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
-      timerIntervalRef.current = window.setInterval(() => setTimer(s => s + 1), 1000);
-    }, 100);
+    // Start timer immediately
+    setTimer(0);
+    if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
+    timerIntervalRef.current = window.setInterval(() => setSeconds(s => s + 1), 1000);
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ 
@@ -119,7 +117,7 @@ const Translator: React.FC<TranslatorProps> = ({ status, setStatus }) => {
       });
       activeStreamRef.current = stream;
       
-      // Enforce iOS-compatible MIME type
+      // Enforce audio/mp4 for iOS as it's more stable than webm on Safari
       const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
       const mimeType = isIOS ? 'audio/mp4' : (MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : 'audio/webm');
       
@@ -138,18 +136,20 @@ const Translator: React.FC<TranslatorProps> = ({ status, setStatus }) => {
       mediaRecorder.onstop = async () => {
         const pressDuration = Date.now() - pressStartTimeRef.current;
         
-        // Stop tracks immediately
         if (activeStreamRef.current) {
           activeStreamRef.current.getTracks().forEach(track => track.stop());
           activeStreamRef.current = null;
         }
 
-        if (pressDuration > 400 && chunksRef.current.length > 0) {
+        // Verify if we actually have audio data (minimum size check)
+        if (pressDuration > 300 && chunksRef.current.length > 0) {
           const finalMime = chunksRef.current[0].type || mimeType;
           const audioBlob = new Blob(chunksRef.current, { type: finalMime });
-          if (audioBlob.size > 100) {
+          
+          if (audioBlob.size > 500) { // Small header is usually ~300-400 bytes
             await handleTranslation(audioBlob);
           } else {
+            console.warn("Recording too short or empty blob", audioBlob.size);
             resetUIState();
           }
         } else {
@@ -157,33 +157,34 @@ const Translator: React.FC<TranslatorProps> = ({ status, setStatus }) => {
         }
       };
       
-      // Use short timeslice for Safari stability
-      mediaRecorder.start(100);
+      // Use a slightly larger timeslice for Safari to avoid fragmentation
+      mediaRecorder.start(250);
     } catch (err) {
       console.error("Mic error:", err);
+      alert("Please allow microphone access in your iPhone settings.");
       resetUIState();
     }
+  };
+
+  const setSeconds = (fn: (s: number) => number) => {
+    setTimer(prev => fn(prev));
   };
 
   const resetUIState = () => {
     setIsPressing(false);
     setTimer(0);
-    if (uiFeedbackTimeoutRef.current) clearTimeout(uiFeedbackTimeoutRef.current);
     if (timerIntervalRef.current) { 
       clearInterval(timerIntervalRef.current); 
       timerIntervalRef.current = null; 
     }
   };
 
-  const stopRecording = () => {
-    if (uiFeedbackTimeoutRef.current) { 
-      clearTimeout(uiFeedbackTimeoutRef.current); 
-      uiFeedbackTimeoutRef.current = null; 
-    }
+  const stopRecording = (e?: any) => {
+    if (e && e.preventDefault) e.preventDefault();
     
     if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') { 
       try { 
-        // Force request data to capture last bits on Safari
+        // Force request data and then stop
         mediaRecorderRef.current.requestData();
         mediaRecorderRef.current.stop(); 
       } catch(e){
@@ -242,7 +243,7 @@ const Translator: React.FC<TranslatorProps> = ({ status, setStatus }) => {
   return (
     <div className="w-full h-full flex flex-col min-h-0 overflow-hidden select-none touch-none">
       <div className="flex-none flex items-center justify-between px-2 pt-1 pb-1">
-        <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Language</span>
+        <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Target Language</span>
         <select 
           value={targetLang}
           onChange={(e) => setTargetLang(e.target.value)}
@@ -255,20 +256,24 @@ const Translator: React.FC<TranslatorProps> = ({ status, setStatus }) => {
       </div>
 
       <div className="flex-1 flex flex-col gap-1.5 min-h-0 overflow-hidden">
-        <div className="flex-[0.35] min-h-0 bg-slate-900/40 border border-slate-800/50 rounded-2xl p-2.5 flex flex-col shadow-inner shrink-0 overflow-hidden">
+        {/* Strictly Constrained Input Area */}
+        <div className="flex-[0.4] min-h-0 bg-slate-900/40 border border-slate-800/50 rounded-2xl p-2.5 flex flex-col shadow-inner shrink-0 overflow-hidden">
           <div className="flex items-center gap-1.5 mb-1 flex-none">
-            <div className="w-1.5 h-1.5 bg-slate-600 rounded-full"></div>
-            <span className="text-[8px] font-black text-slate-600 uppercase tracking-widest">Spoken</span>
+            <div className={`w-1.5 h-1.5 rounded-full ${isPressing ? 'bg-red-500 animate-pulse' : 'bg-slate-600'}`}></div>
+            <span className="text-[8px] font-black text-slate-600 uppercase tracking-widest">
+              {isPressing ? "iPhone is Listening..." : "Spoken Content"}
+            </span>
           </div>
           <div className="flex-1 overflow-y-auto no-scrollbar text-sm text-slate-400 leading-snug font-medium italic">
-            {translationData?.original || (isBusy && !translationData ? (uploadProgress ? "Syncing..." : "Analysing...") : "Waiting...")}
+            {translationData?.original || (isBusy && !translationData ? (uploadProgress ? "Uploading..." : "Analysing...") : isPressing ? "Microphone active. Keep holding to speak." : "Hold the button and speak...")}
           </div>
         </div>
 
-        <div className="flex-[0.65] min-h-0 bg-indigo-500/5 border border-indigo-500/10 rounded-2xl p-3.5 flex flex-col shadow-lg overflow-hidden">
+        {/* Constrained Result Area */}
+        <div className="flex-[0.6] min-h-0 bg-indigo-500/5 border border-indigo-500/10 rounded-2xl p-3.5 flex flex-col shadow-lg overflow-hidden">
           <div className="flex items-center gap-1.5 mb-1 flex-none">
             <div className={`w-1.5 h-1.5 bg-indigo-500 rounded-full ${isBusy ? 'animate-pulse' : ''}`}></div>
-            <span className="text-[8px] font-black text-indigo-500 uppercase tracking-widest">Result</span>
+            <span className="text-[8px] font-black text-indigo-500 uppercase tracking-widest">AI Translation Result</span>
           </div>
           <div className="flex-1 overflow-y-auto no-scrollbar text-xl text-slate-100 font-extrabold leading-tight tracking-tight">
             {isBusy ? (
@@ -277,14 +282,14 @@ const Translator: React.FC<TranslatorProps> = ({ status, setStatus }) => {
                 <div className="h-5 bg-slate-800 rounded w-4/5 animate-pulse"></div>
               </div>
             ) : (
-              translationData?.translated || "Standing by..."
+              translationData?.translated || "Waiting for audio signal..."
             )}
           </div>
         </div>
       </div>
 
-      {/* Button Section: Shifted up by 12px via mb-3 */}
-      <div className="flex-none flex flex-col items-center pt-2 pb-1 mb-3">
+      {/* Button Section: Positioned carefully for Safe Area */}
+      <div className="flex-none flex flex-col items-center pt-2 pb-1 mb-6">
         <div className={`h-6 transition-all duration-300 ${isPressing ? 'opacity-100' : 'opacity-0'}`}>
           <span className="text-xl font-mono font-black text-white">{timer}s</span>
         </div>
@@ -299,7 +304,7 @@ const Translator: React.FC<TranslatorProps> = ({ status, setStatus }) => {
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" />
                 </svg>
-                <span className="text-[5px] font-black uppercase mt-0.5 tracking-tighter">Exit</span>
+                <span className="text-[5px] font-black uppercase mt-0.5 tracking-tighter">Cancel</span>
               </button>
             ) : <div className="w-11 h-11"></div>}
           </div>
@@ -311,6 +316,7 @@ const Translator: React.FC<TranslatorProps> = ({ status, setStatus }) => {
             onTouchStart={(e) => { e.preventDefault(); startRecording(); }}
             onTouchEnd={(e) => { e.preventDefault(); stopRecording(); }}
             disabled={isBusy}
+            style={{ touchAction: 'none' }}
             className={`w-[84px] h-[84px] flex-shrink-0 rounded-full flex flex-col items-center justify-center transition-all duration-300 transform active:scale-90 shadow-2xl relative border-[4px] ${
               isPressing 
                 ? 'bg-red-600 scale-105 shadow-red-500/40 border-red-500/30' 
@@ -329,7 +335,7 @@ const Translator: React.FC<TranslatorProps> = ({ status, setStatus }) => {
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-7 w-7 text-white mb-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-20a3 3 0 00-3 3v10a3 3 0 003 3 3 3 0 003-3V5a3 3 0 00-3-3z" />
                 </svg>
-                <span className="text-[7px] font-black uppercase text-white/80 text-center leading-none">Record</span>
+                <span className="text-[7px] font-black uppercase text-white/80 text-center leading-none">Hold & Speak</span>
               </>
             )}
           </button>

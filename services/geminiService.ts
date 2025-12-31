@@ -1,4 +1,3 @@
-
 import { GoogleGenAI, Type } from "@google/genai";
 
 const getAIClient = () => {
@@ -9,9 +8,9 @@ const getAIClient = () => {
 const normalizeMimeType = (mimeType: string): string => {
   const lower = mimeType.toLowerCase();
   if (lower.includes('webm')) return 'audio/webm';
-  if (lower.includes('mp4') || lower.includes('m4a') || lower.includes('x-m4a')) return 'audio/mp4';
+  // Safari on iOS often uses x-m4a or just mp4
+  if (lower.includes('mp4') || lower.includes('m4a') || lower.includes('x-m4a') || lower.includes('aac')) return 'audio/mp4';
   if (lower.includes('mpeg') || lower.includes('mp3')) return 'audio/mpeg';
-  if (lower.includes('aac')) return 'audio/aac';
   if (lower.includes('wav')) return 'audio/wav';
   return 'audio/mp4'; // Default fallback for mobile
 };
