@@ -10,6 +10,7 @@ const App: React.FC = () => {
   const [status, setStatus] = useState<ProcessingStatus>(ProcessingStatus.IDLE);
   const [activeTab, setActiveTab] = useState<Tab>('translate');
   const [isDecoyMode, setIsDecoyMode] = useState(false);
+  const [hasMicPermission, setHasMicPermission] = useState<boolean | null>(null);
   const [currentTime, setCurrentTime] = useState(new Date());
 
   const lastTapRef = useRef<{ count: number; time: number }>({ count: 0, time: 0 });
@@ -19,6 +20,19 @@ const App: React.FC = () => {
       setCurrentTime(new Date());
     }, 1000);
     return () => clearInterval(timer);
+  }, []);
+
+  // Check for permission on load
+  useEffect(() => {
+    navigator.permissions?.query({ name: 'microphone' as any }).then(result => {
+      if (result.state === 'granted') {
+        setHasMicPermission(true);
+      } else if (result.state === 'denied') {
+        setHasMicPermission(false);
+      }
+    }).catch(() => {
+      // Browsers not supporting permissions query will fall back to the prompt
+    });
   }, []);
 
   useEffect(() => {
@@ -46,6 +60,17 @@ const App: React.FC = () => {
       console.warn("Storage limit might have been reached", e);
     }
   }, [memos]);
+
+  const requestPermission = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream.getTracks().forEach(t => t.stop());
+      setHasMicPermission(true);
+    } catch (err) {
+      setHasMicPermission(false);
+      alert("Microphone access is required for this app to function.");
+    }
+  };
 
   const handleTripleTap = (e: React.MouseEvent | React.TouchEvent) => {
     if (e.type === 'click') e.preventDefault();
@@ -114,6 +139,26 @@ const App: React.FC = () => {
     setMemos(prev => prev.filter(m => m.id !== id));
   };
 
+  if (hasMicPermission === false || hasMicPermission === null) {
+    return (
+      <div className="h-screen w-full flex flex-col items-center justify-center bg-slate-950 px-8 text-center">
+        <div className="w-20 h-20 bg-indigo-500/20 rounded-3xl flex items-center justify-center mb-6 animate-pulse">
+           <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-20a3 3 0 00-3 3v10a3 3 0 003 3 3 3 0 003-3V5a3 3 0 00-3-3z" />
+            </svg>
+        </div>
+        <h1 className="text-2xl font-black text-white mb-2">Mic Access Required</h1>
+        <p className="text-slate-500 text-sm mb-8">AllanEcho AI needs your microphone to transcribe and translate your voice in real-time.</p>
+        <button 
+          onClick={requestPermission}
+          className="w-full max-w-xs bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-4 rounded-2xl shadow-xl shadow-indigo-500/20 transition-all active:scale-95"
+        >
+          Grant Permission
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="h-screen w-full flex flex-col bg-slate-950 text-slate-100 overflow-hidden select-none touch-none">
       {isDecoyMode && (
@@ -132,7 +177,7 @@ const App: React.FC = () => {
         </div>
       )}
 
-      <header className="flex-none max-w-xl w-full mx-auto px-6 pt-3 pb-1 flex items-center justify-between">
+      <header className="flex-none max-w-xl w-full mx-auto px-6 pt-12 pb-2 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 bg-indigo-500 rounded-lg flex items-center justify-center shadow-lg shadow-indigo-500/20">
             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -226,9 +271,10 @@ const App: React.FC = () => {
         )}
       </main>
       
-      <footer className="flex-none h-16 bg-slate-950/90 backdrop-blur-2xl border-t border-slate-900/50 flex items-center justify-around z-50 px-2 pb-safe touch-auto">
+      {/* Optimized footer for iPhone 16 Pro gesture area */}
+      <footer className="flex-none bg-slate-950/90 backdrop-blur-2xl border-t border-slate-900/50 flex items-center justify-around z-50 px-2 pt-2 pb-[max(1rem,env(safe-area-inset-bottom))] touch-auto">
         <button onClick={() => setActiveTab('translate')} className={`flex flex-col items-center gap-0.5 transition-all flex-1 relative ${activeTab === 'translate' ? 'text-indigo-400 scale-105' : 'text-slate-600 hover:text-slate-400'}`}>
-          {activeTab === 'translate' && <div className="absolute -top-1 w-8 h-0.5 bg-indigo-500 rounded-full shadow-[0_0_8px_#6366f1]"></div>}
+          {activeTab === 'translate' && <div className="absolute -top-2 w-8 h-0.5 bg-indigo-500 rounded-full shadow-[0_0_8px_#6366f1]"></div>}
           <div className="p-1">
             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10M12.751 5C11.783 10.77 8.07 15.61 3 18.129" />
@@ -238,7 +284,7 @@ const App: React.FC = () => {
         </button>
 
         <button onClick={() => setActiveTab('record')} className={`flex flex-col items-center gap-0.5 transition-all flex-1 relative ${activeTab === 'record' ? 'text-indigo-400 scale-105' : 'text-slate-600 hover:text-slate-400'}`}>
-          {activeTab === 'record' && <div className="absolute -top-1 w-8 h-0.5 bg-indigo-500 rounded-full shadow-[0_0_8px_#6366f1]"></div>}
+          {activeTab === 'record' && <div className="absolute -top-2 w-8 h-0.5 bg-indigo-500 rounded-full shadow-[0_0_8px_#6366f1]"></div>}
           <div className="p-1">
             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-20a3 3 0 00-3 3v10a3 3 0 003 3 3 3 0 003-3V5a3 3 0 00-3-3z" />
@@ -248,7 +294,7 @@ const App: React.FC = () => {
         </button>
         
         <button onClick={() => setActiveTab('library')} className={`flex flex-col items-center gap-0.5 transition-all flex-1 relative ${activeTab === 'library' ? 'text-indigo-400 scale-105' : 'text-slate-600 hover:text-slate-400'}`}>
-          {activeTab === 'library' && <div className="absolute -top-1 w-8 h-0.5 bg-indigo-500 rounded-full shadow-[0_0_8px_#6366f1]"></div>}
+          {activeTab === 'library' && <div className="absolute -top-2 w-8 h-0.5 bg-indigo-500 rounded-full shadow-[0_0_8px_#6366f1]"></div>}
           <div className="p-1">
             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
@@ -258,7 +304,7 @@ const App: React.FC = () => {
         </button>
         
         <button onClick={() => setActiveTab('settings')} className={`flex flex-col items-center gap-0.5 transition-all flex-1 relative ${activeTab === 'settings' ? 'text-indigo-400 scale-105' : 'text-slate-600 hover:text-slate-400'}`}>
-          {activeTab === 'settings' && <div className="absolute -top-1 w-8 h-0.5 bg-indigo-500 rounded-full shadow-[0_0_8px_#6366f1]"></div>}
+          {activeTab === 'settings' && <div className="absolute -top-2 w-8 h-0.5 bg-indigo-500 rounded-full shadow-[0_0_8px_#6366f1]"></div>}
           <div className="p-1">
             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />

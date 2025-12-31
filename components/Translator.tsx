@@ -78,9 +78,8 @@ const Translator: React.FC<TranslatorProps> = ({ status, setStatus }) => {
   const startRecording = async () => {
     if (isBusy) return;
     
-    // Check connection for mobile users
     if (!navigator.onLine) {
-        alert("Internet connection required for translation.");
+        alert("Internet connection required.");
         return;
     }
 
@@ -92,7 +91,7 @@ const Translator: React.FC<TranslatorProps> = ({ status, setStatus }) => {
       setTimer(0);
       if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
       timerIntervalRef.current = window.setInterval(() => setTimer(s => s + 1), 1000);
-    }, 150);
+    }, 100);
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ 
@@ -100,10 +99,12 @@ const Translator: React.FC<TranslatorProps> = ({ status, setStatus }) => {
       });
       activeStreamRef.current = stream;
       
-      // Better MIME detection for cross-device support
+      // Force audio/mp4 for iOS stability
       let mimeType = 'audio/mp4';
-      if (MediaRecorder.isTypeSupported('audio/webm')) mimeType = 'audio/webm';
-      else if (MediaRecorder.isTypeSupported('audio/aac')) mimeType = 'audio/aac';
+      if (!MediaRecorder.isTypeSupported(mimeType)) {
+          if (MediaRecorder.isTypeSupported('audio/webm')) mimeType = 'audio/webm';
+          else if (MediaRecorder.isTypeSupported('audio/aac')) mimeType = 'audio/aac';
+      }
       
       const mediaRecorder = new MediaRecorder(stream, { 
         mimeType, 
@@ -125,7 +126,7 @@ const Translator: React.FC<TranslatorProps> = ({ status, setStatus }) => {
           activeStreamRef.current = null;
         }
 
-        if (pressDuration > 400 && audioBlob.size > 500) {
+        if (pressDuration > 400 && audioBlob.size > 200) {
           await handleTranslation(audioBlob);
         } else {
           setIsPressing(false);
@@ -134,7 +135,7 @@ const Translator: React.FC<TranslatorProps> = ({ status, setStatus }) => {
         }
       };
       
-      mediaRecorder.start(); // Using standard start for better mobile browser compatibility
+      mediaRecorder.start();
     } catch (err) {
       console.error("Mic access denied:", err);
       setIsPressing(false);
@@ -145,7 +146,7 @@ const Translator: React.FC<TranslatorProps> = ({ status, setStatus }) => {
   const stopRecording = () => {
     if (uiFeedbackTimeoutRef.current) { clearTimeout(uiFeedbackTimeoutRef.current); uiFeedbackTimeoutRef.current = null; }
     if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') { 
-      mediaRecorderRef.current.stop(); 
+      try { mediaRecorderRef.current.stop(); } catch(e){} 
     }
     setIsPressing(false);
     if (timerIntervalRef.current) { clearInterval(timerIntervalRef.current); timerIntervalRef.current = null; }
@@ -194,7 +195,7 @@ const Translator: React.FC<TranslatorProps> = ({ status, setStatus }) => {
 
   return (
     <div className="w-full h-full flex flex-col gap-1 overflow-hidden">
-      <div className="flex-none flex items-center justify-between px-2 pt-1">
+      <div className="flex-none flex items-center justify-between px-2 pt-0.5">
         <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Translate to:</span>
         <select 
           value={targetLang}
@@ -207,27 +208,27 @@ const Translator: React.FC<TranslatorProps> = ({ status, setStatus }) => {
         </select>
       </div>
 
-      <div className="flex-1 flex flex-col gap-1.5 min-h-0">
-        <div className="flex-[0.5] min-h-0 bg-slate-900/30 border border-slate-800/50 rounded-xl p-3 flex flex-col shadow-inner">
-          <div className="flex items-center gap-1.5 mb-1 flex-none">
+      <div className="flex-1 flex flex-col gap-1 min-h-0">
+        <div className="flex-[0.35] min-h-0 bg-slate-900/30 border border-slate-800/50 rounded-xl p-2.5 flex flex-col shadow-inner">
+          <div className="flex items-center gap-1.5 mb-0.5 flex-none">
             <div className="w-1.5 h-1.5 bg-slate-600 rounded-full"></div>
             <span className="text-[8px] font-black text-slate-600 uppercase tracking-widest">Spoken Text</span>
           </div>
           <div className="flex-1 overflow-y-auto no-scrollbar text-sm text-slate-400 leading-snug font-medium italic">
-            {translationData?.original || (isBusy && !translationData ? (uploadProgress ? "Syncing..." : "Decoding...") : "Waiting for voice...")}
+            {translationData?.original || (isBusy && !translationData ? (uploadProgress ? "Syncing..." : "Decoding...") : "Waiting...")}
           </div>
         </div>
 
-        <div className="flex-[1.2] min-h-0 bg-indigo-500/5 border border-indigo-500/10 rounded-xl p-4 flex flex-col shadow-lg shadow-indigo-500/5">
+        <div className="flex-[1.1] min-h-0 bg-indigo-500/5 border border-indigo-500/10 rounded-xl p-3.5 flex flex-col shadow-lg shadow-indigo-500/5">
           <div className="flex items-center gap-1.5 mb-1 flex-none">
             <div className={`w-1.5 h-1.5 bg-indigo-500 rounded-full ${isBusy ? 'animate-pulse' : ''}`}></div>
-            <span className="text-[8px] font-black text-indigo-500 uppercase tracking-widest">AI Translation ({targetLang})</span>
+            <span className="text-[8px] font-black text-indigo-500 uppercase tracking-widest">AI Result ({targetLang})</span>
           </div>
-          <div className="flex-1 overflow-y-auto no-scrollbar text-xl text-slate-100 font-extrabold leading-tight tracking-tight">
+          <div className="flex-1 overflow-y-auto no-scrollbar text-2xl text-slate-100 font-extrabold leading-tight tracking-tight">
             {isBusy ? (
-              <div className="space-y-2 opacity-50">
-                <div className="h-4 bg-slate-800 rounded w-full animate-pulse"></div>
-                <div className="h-4 bg-slate-800 rounded w-3/4 animate-pulse"></div>
+              <div className="space-y-2 opacity-30">
+                <div className="h-5 bg-slate-800 rounded w-full animate-pulse"></div>
+                <div className="h-5 bg-slate-800 rounded w-3/4 animate-pulse"></div>
               </div>
             ) : (
               translationData?.translated || "Standing by..."
@@ -236,12 +237,12 @@ const Translator: React.FC<TranslatorProps> = ({ status, setStatus }) => {
         </div>
       </div>
 
-      <div className="flex-none flex flex-col items-center py-1">
+      <div className="flex-none flex flex-col items-center pt-1 pb-1">
         <div className={`h-5 transition-all duration-300 ${isPressing ? 'opacity-100' : 'opacity-0'}`}>
           <span className="text-xl font-mono font-black text-white">{timer}s</span>
         </div>
 
-        <div className="flex items-center justify-center gap-4 w-full max-w-sm mx-auto px-4 pb-1">
+        <div className="flex items-center justify-center gap-4 w-full max-w-sm mx-auto px-4 pb-2">
           <div className="flex-1 flex justify-end">
             {isBusy ? (
               <button
@@ -265,7 +266,7 @@ const Translator: React.FC<TranslatorProps> = ({ status, setStatus }) => {
             onTouchStart={(e) => { e.preventDefault(); startRecording(); }}
             onTouchEnd={(e) => { e.preventDefault(); stopRecording(); }}
             disabled={isBusy}
-            className={`w-[92px] h-[92px] flex-shrink-0 rounded-full flex flex-col items-center justify-center transition-all duration-300 transform active:scale-90 shadow-2xl relative border-[5px] ${
+            className={`w-[84px] h-[84px] flex-shrink-0 rounded-full flex flex-col items-center justify-center transition-all duration-300 transform active:scale-90 shadow-2xl relative border-[5px] ${
               isPressing 
                 ? 'bg-red-600 scale-105 shadow-red-500/40 border-red-500/20' 
                 : isBusy 
@@ -279,7 +280,6 @@ const Translator: React.FC<TranslatorProps> = ({ status, setStatus }) => {
                   <circle className="opacity-10" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"></circle>
                   <path className="opacity-90" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                 </svg>
-                <span className="text-[6px] font-black uppercase text-indigo-400">Thinking</span>
               </div>
             ) : (
               <>
