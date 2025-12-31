@@ -1,0 +1,7 @@
+{
+  "name": "AllanEcho AI Voice Memos",
+  "description": "A smart voice memo application that automatically transcribes and summarizes your recordings using Gemini AI.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
