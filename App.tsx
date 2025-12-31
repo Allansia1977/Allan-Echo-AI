@@ -167,7 +167,7 @@ const App: React.FC = () => {
       </header>
 
       {/* Main Content Area */}
-      <main className={`flex-1 overflow-y-auto no-scrollbar max-w-xl w-full mx-auto px-4 pt-2 ${activeTab === 'translate' ? 'pb-6 overflow-hidden' : 'pb-28'}`}>
+      <main className={`flex-1 overflow-y-auto no-scrollbar max-w-xl w-full mx-auto px-4 pt-2 ${activeTab === 'translate' ? 'overflow-hidden' : 'pb-28'}`}>
         {activeTab === 'translate' && (
           <div className="h-full flex flex-col animate-in fade-in slide-in-from-bottom-4 duration-400 overflow-hidden">
              <Translator status={status} setStatus={setStatus} />

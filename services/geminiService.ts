@@ -1,11 +1,24 @@
+
 import { GoogleGenAI, Type } from "@google/genai";
 
 const getAIClient = () => {
   return new GoogleGenAI({ apiKey: process.env.API_KEY });
 };
 
+// Normalize MIME types for Gemini API compatibility (especially for mobile browsers)
+const normalizeMimeType = (mimeType: string): string => {
+  const lower = mimeType.toLowerCase();
+  if (lower.includes('webm')) return 'audio/webm';
+  if (lower.includes('mp4') || lower.includes('m4a') || lower.includes('x-m4a')) return 'audio/mp4';
+  if (lower.includes('mpeg') || lower.includes('mp3')) return 'audio/mpeg';
+  if (lower.includes('aac')) return 'audio/aac';
+  if (lower.includes('wav')) return 'audio/wav';
+  return 'audio/mp4'; // Default fallback for mobile
+};
+
 export const transcribeAudio = async (base64Audio: string, mimeType: string): Promise<string> => {
   const ai = getAIClient();
+  const normalizedMime = normalizeMimeType(mimeType);
   try {
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
@@ -13,12 +26,12 @@ export const transcribeAudio = async (base64Audio: string, mimeType: string): Pr
         parts: [
           {
             inlineData: {
-              mimeType,
+              mimeType: normalizedMime,
               data: base64Audio
             }
           },
           {
-            text: "Transcribe this audio exactly. Return only the transcription text."
+            text: "Transcribe this audio exactly in its original language. Return only the transcription text."
           }
         ]
       },
@@ -52,6 +65,7 @@ export const summarizeTranscript = async (transcript: string): Promise<string> =
 
 export const translateAudio = async (base64Audio: string, mimeType: string, targetLanguage: string): Promise<{original: string, translated: string}> => {
   const ai = getAIClient();
+  const normalizedMime = normalizeMimeType(mimeType);
   try {
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
@@ -59,12 +73,15 @@ export const translateAudio = async (base64Audio: string, mimeType: string, targ
         parts: [
           {
             inlineData: {
-              mimeType,
+              mimeType: normalizedMime,
               data: base64Audio
             }
           },
           {
-            text: `1. Transcribe the audio original language. 2. Translate it to ${targetLanguage}. Return JSON: {"original": "...", "translated": "..."}`
+            text: `Detect the spoken language. 
+            1. Transcribe the audio verbatim in its original spoken language (e.g. if I speak Thai, the "original" field must be in Thai). 
+            2. Translate that transcription into ${targetLanguage}. 
+            Return the result as a JSON object with keys "original" and "translated".`
           }
         ]
       },
@@ -73,8 +90,14 @@ export const translateAudio = async (base64Audio: string, mimeType: string, targ
         responseSchema: {
           type: Type.OBJECT,
           properties: {
-            original: { type: Type.STRING },
-            translated: { type: Type.STRING }
+            original: { 
+              type: Type.STRING,
+              description: "Verbatim transcription of the audio in its original spoken language."
+            },
+            translated: { 
+              type: Type.STRING, 
+              description: "The translation into the requested target language."
+            }
           },
           required: ["original", "translated"]
         },
@@ -100,7 +123,7 @@ export const translateText = async (text: string, targetLanguage: string): Promi
   try {
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
-      contents: `Translate to ${targetLanguage}. Return ONLY the translation: \n\n ${text}`,
+      contents: `Translate the following text to ${targetLanguage}. Return ONLY the translation text itself: \n\n ${text}`,
       config: {
         thinkingConfig: { thinkingBudget: 0 }
       }
