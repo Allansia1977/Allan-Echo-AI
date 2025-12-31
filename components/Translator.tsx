@@ -23,6 +23,7 @@ const Translator: React.FC<TranslatorProps> = ({ status, setStatus }) => {
   const [targetLang, setTargetLang] = useState('English');
   const [translationData, setTranslationData] = useState<{original: string, translated: string} | null>(null);
   const [timer, setTimer] = useState(0);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [uploadProgress, setUploadProgress] = useState(false);
   
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -40,15 +41,20 @@ const Translator: React.FC<TranslatorProps> = ({ status, setStatus }) => {
     requestIdRef.current += 1;
     setStatus(ProcessingStatus.IDLE);
     setUploadProgress(false);
+    setErrorMessage(null);
   };
 
   const initAudioContext = async () => {
-    if (!audioContextRef.current) {
-      const AudioContextClass = (window as any).AudioContext || (window as any).webkitAudioContext;
-      audioContextRef.current = new AudioContextClass();
-    }
-    if (audioContextRef.current?.state === 'suspended') {
-      await audioContextRef.current.resume();
+    try {
+      if (!audioContextRef.current) {
+        const AudioContextClass = (window as any).AudioContext || (window as any).webkitAudioContext;
+        audioContextRef.current = new AudioContextClass();
+      }
+      if (audioContextRef.current?.state === 'suspended') {
+        await audioContextRef.current.resume();
+      }
+    } catch (e) {
+      console.error("AudioContext Init Error:", e);
     }
   };
 
@@ -77,6 +83,7 @@ const Translator: React.FC<TranslatorProps> = ({ status, setStatus }) => {
           if (currentRequestId === requestIdRef.current) {
             console.error("Re-translation error:", err);
             setStatus(ProcessingStatus.ERROR);
+            setErrorMessage("Translation failed. Try again.");
             setTimeout(() => setStatus(ProcessingStatus.IDLE), 2000);
           }
         }
@@ -88,12 +95,13 @@ const Translator: React.FC<TranslatorProps> = ({ status, setStatus }) => {
   const startRecording = async () => {
     if (isBusy) return;
     
-    // Step 1: Immediate gesture activation (iOS Requirement)
+    setErrorMessage(null);
     setIsPressing(true);
     await initAudioContext();
 
     if (!navigator.onLine) {
-        alert("Connection lost.");
+        setErrorMessage("Network Offline");
+        setStatus(ProcessingStatus.ERROR);
         resetUIState();
         return;
     }
@@ -117,11 +125,13 @@ const Translator: React.FC<TranslatorProps> = ({ status, setStatus }) => {
       activeStreamRef.current = stream;
       
       const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
+      // Force standard audio/mp4 for iOS to ensure compatibility with Gemini
       const mimeType = isIOS ? 'audio/mp4' : (MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : 'audio/webm');
       
       const mediaRecorder = new MediaRecorder(stream, { 
         mimeType, 
-        audioBitsPerSecond: 64000 
+        // Lower bitrate for mobile (32kbps) to improve upload reliability on iPhone
+        audioBitsPerSecond: 32000 
       });
       mediaRecorderRef.current = mediaRecorder;
       
@@ -146,6 +156,7 @@ const Translator: React.FC<TranslatorProps> = ({ status, setStatus }) => {
           if (audioBlob.size > 500) { 
             await handleTranslation(audioBlob);
           } else {
+            setErrorMessage("Audio capture too short.");
             resetUIState();
           }
         } else {
@@ -153,11 +164,11 @@ const Translator: React.FC<TranslatorProps> = ({ status, setStatus }) => {
         }
       };
       
-      // Start recording with buffer slices
       mediaRecorder.start(250);
     } catch (err) {
       console.error("Mic error:", err);
-      alert("Microphone permission required.");
+      setErrorMessage("Microphone access denied.");
+      setStatus(ProcessingStatus.ERROR);
       resetUIState();
     }
   };
@@ -176,8 +187,6 @@ const Translator: React.FC<TranslatorProps> = ({ status, setStatus }) => {
     
     if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') { 
       try { 
-        // iOS Flush
-        mediaRecorderRef.current.requestData();
         mediaRecorderRef.current.stop(); 
       } catch(e){
         console.error("Stop error:", e);
@@ -196,6 +205,7 @@ const Translator: React.FC<TranslatorProps> = ({ status, setStatus }) => {
     setStatus(ProcessingStatus.TRANSLATING);
     setUploadProgress(true);
     setTranslationData(null);
+    setErrorMessage(null);
     const currentTarget = targetLang;
     try {
       const reader = new FileReader();
@@ -204,21 +214,25 @@ const Translator: React.FC<TranslatorProps> = ({ status, setStatus }) => {
         const result = reader.result as string;
         if (!result) {
            setStatus(ProcessingStatus.ERROR);
+           setErrorMessage("Format Error");
            return;
         }
         const base64 = result.split(',')[1];
         setUploadProgress(false);
         try {
-          const data = await translateAudio(base64, blob.type, currentTarget);
+          // Explicitly pass audio/mp4 if on iOS to avoid Gemini processing errors
+          const apiMime = blob.type || 'audio/mp4';
+          const data = await translateAudio(base64, apiMime, currentTarget);
           if (currentRequestId === requestIdRef.current) {
             setTranslationData(data);
             lastTranslatedToRef.current = currentTarget;
             setStatus(ProcessingStatus.IDLE);
           }
-        } catch (apiErr) {
+        } catch (apiErr: any) {
           if (currentRequestId === requestIdRef.current) {
             console.error("API Error:", apiErr);
             setStatus(ProcessingStatus.ERROR);
+            setErrorMessage(apiErr.message?.includes('429') ? "Limit Reached" : "Neural Link Error");
             setTimeout(() => setStatus(ProcessingStatus.IDLE), 3000);
           }
         }
@@ -227,6 +241,7 @@ const Translator: React.FC<TranslatorProps> = ({ status, setStatus }) => {
     } catch (err) {
       if (currentRequestId === requestIdRef.current) {
         setStatus(ProcessingStatus.ERROR);
+        setErrorMessage("Local Processing Error");
         setTimeout(() => setStatus(ProcessingStatus.IDLE), 2000);
       }
     }
@@ -248,6 +263,7 @@ const Translator: React.FC<TranslatorProps> = ({ status, setStatus }) => {
       </div>
 
       <div className="flex-1 flex flex-col gap-1.5 min-h-0 overflow-hidden">
+        {/* Input Area */}
         <div className="flex-[0.4] min-h-0 bg-slate-900/40 border border-slate-800/50 rounded-2xl p-2.5 flex flex-col shadow-inner shrink-0 overflow-hidden">
           <div className="flex items-center gap-1.5 mb-1 flex-none">
             <div className={`w-1.5 h-1.5 rounded-full ${isPressing ? 'bg-red-500 animate-pulse' : 'bg-slate-600'}`}></div>
@@ -256,10 +272,15 @@ const Translator: React.FC<TranslatorProps> = ({ status, setStatus }) => {
             </span>
           </div>
           <div className="flex-1 overflow-y-auto no-scrollbar text-sm text-slate-400 leading-snug font-medium italic">
-            {translationData?.original || (isBusy && !translationData ? (uploadProgress ? "Syncing..." : "Analysing...") : isPressing ? "Speak clearly into the microphone." : "Waiting for audio...")}
+            {errorMessage ? (
+              <span className="text-red-500 font-bold uppercase text-[10px] tracking-tight">{errorMessage}</span>
+            ) : (
+              translationData?.original || (isBusy && !translationData ? (uploadProgress ? "Syncing..." : "Analysing...") : isPressing ? "Speak clearly into the microphone." : "Waiting for audio...")
+            )}
           </div>
         </div>
 
+        {/* Result Area */}
         <div className="flex-[0.6] min-h-0 bg-indigo-500/5 border border-indigo-500/10 rounded-2xl p-3.5 flex flex-col shadow-lg overflow-hidden">
           <div className="flex items-center gap-1.5 mb-1 flex-none">
             <div className={`w-1.5 h-1.5 bg-indigo-500 rounded-full ${isBusy ? 'animate-pulse' : ''}`}></div>
@@ -285,7 +306,7 @@ const Translator: React.FC<TranslatorProps> = ({ status, setStatus }) => {
 
         <div className="flex items-center justify-center gap-4 w-full max-w-sm mx-auto px-6">
           <div className="flex-1 flex justify-end">
-            {isBusy ? (
+            {(isBusy || status === ProcessingStatus.ERROR) ? (
               <button
                 onClick={cancelTranslation}
                 className="w-11 h-11 rounded-full bg-slate-900 border border-red-500/60 flex flex-col items-center justify-center text-red-500 active:scale-90 transition-all shadow-lg"
@@ -293,7 +314,7 @@ const Translator: React.FC<TranslatorProps> = ({ status, setStatus }) => {
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" />
                 </svg>
-                <span className="text-[5px] font-black uppercase mt-0.5 tracking-tighter">Cancel</span>
+                <span className="text-[5px] font-black uppercase mt-0.5 tracking-tighter">Reset</span>
               </button>
             ) : <div className="w-11 h-11"></div>}
           </div>

@@ -187,8 +187,8 @@ const App: React.FC = () => {
         
         <div className="flex items-center gap-3">
           {status !== ProcessingStatus.IDLE && (
-            <div className="flex items-center gap-1.5 text-[7px] font-bold text-indigo-400 bg-slate-900 px-2 py-0.5 rounded-full border border-slate-800 shadow-xl animate-pulse">
-              <div className="w-1 h-1 bg-indigo-500 rounded-full animate-ping"></div>
+            <div className={`flex items-center gap-1.5 text-[7px] font-bold px-2 py-0.5 rounded-full border shadow-xl animate-pulse ${status === ProcessingStatus.ERROR ? 'bg-red-500 text-white border-red-400' : 'text-indigo-400 bg-slate-900 border-slate-800'}`}>
+              <div className={`w-1 h-1 rounded-full animate-ping ${status === ProcessingStatus.ERROR ? 'bg-white' : 'bg-indigo-500'}`}></div>
               {status}
             </div>
           )}
