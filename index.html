@@ -27,7 +27,31 @@
       -ms-overflow-style: none;
       scrollbar-width: none;
     }
-    /* Smooth transition for theme colors */
+    /* Safe area padding for mobile notches/gesture bars */
+    .pb-safe {
+      padding-bottom: env(safe-area-inset-bottom);
+    }
+    
+    /* Orientation Lock UI */
+    #portrait-lock {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      background: #020617;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 2rem;
+    }
+
+    @media (orientation: landscape) and (max-height: 500px) {
+      #portrait-lock {
+        display: flex;
+      }
+    }
+
     * {
       transition: background-color 0.2s ease, border-color 0.2s ease;
     }
@@ -44,7 +68,15 @@
 </script>
 </head>
 <body>
+  <div id="portrait-lock">
+    <div class="w-16 h-16 mb-4 text-indigo-500 animate-bounce">
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" />
+      </svg>
+    </div>
+    <h2 class="text-xl font-bold text-slate-100">Portrait Only</h2>
+    <p class="text-slate-500 text-sm mt-2 leading-relaxed">AllanEcho is designed for vertical use.<br>Please rotate your phone.</p>
+  </div>
   <div id="root"></div>
-  <script type="module" src="/index.tsx"></script>
 </body>
 </html>
