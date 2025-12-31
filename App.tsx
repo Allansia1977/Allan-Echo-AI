@@ -22,19 +22,6 @@ const App: React.FC = () => {
     return () => clearInterval(timer);
   }, []);
 
-  // Check for permission on load
-  useEffect(() => {
-    navigator.permissions?.query({ name: 'microphone' as any }).then(result => {
-      if (result.state === 'granted') {
-        setHasMicPermission(true);
-      } else if (result.state === 'denied') {
-        setHasMicPermission(false);
-      }
-    }).catch(() => {
-      // Browsers not supporting permissions query will fall back to the prompt
-    });
-  }, []);
-
   useEffect(() => {
     const saved = localStorage.getItem('echo_mind_memos');
     if (saved) {
@@ -63,12 +50,19 @@ const App: React.FC = () => {
 
   const requestPermission = async () => {
     try {
+      // Create and resume AudioContext immediately on user gesture to unlock iOS audio
+      const AudioContextClass = (window as any).AudioContext || (window as any).webkitAudioContext;
+      const audioCtx = new AudioContextClass();
+      if (audioCtx.state === 'suspended') {
+        await audioCtx.resume();
+      }
+      
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       stream.getTracks().forEach(t => t.stop());
       setHasMicPermission(true);
     } catch (err) {
       setHasMicPermission(false);
-      alert("Microphone access is required for this app to function.");
+      console.error("Permission request failed:", err);
     }
   };
 
@@ -147,13 +141,13 @@ const App: React.FC = () => {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-20a3 3 0 00-3 3v10a3 3 0 003 3 3 3 0 003-3V5a3 3 0 00-3-3z" />
             </svg>
         </div>
-        <h1 className="text-2xl font-black text-white mb-2">Mic Access Required</h1>
-        <p className="text-slate-500 text-sm mb-8">AllanEcho AI needs your microphone to transcribe and translate your voice in real-time.</p>
+        <h1 className="text-2xl font-black text-white mb-2 tracking-tight">System Ready</h1>
+        <p className="text-slate-500 text-sm mb-8 leading-relaxed">AllanEcho AI requires microphone access to process your voice memos and translations.</p>
         <button 
           onClick={requestPermission}
           className="w-full max-w-xs bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-4 rounded-2xl shadow-xl shadow-indigo-500/20 transition-all active:scale-95"
         >
-          Grant Permission
+          Initialize AI Core
         </button>
       </div>
     );
@@ -177,7 +171,8 @@ const App: React.FC = () => {
         </div>
       )}
 
-      <header className="flex-none max-w-xl w-full mx-auto px-6 pt-12 pb-2 flex items-center justify-between">
+      {/* Header with adjusted padding for iPhone dynamic island */}
+      <header className="flex-none max-w-xl w-full mx-auto px-6 pt-[env(safe-area-inset-top,44px)] pb-1 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 bg-indigo-500 rounded-lg flex items-center justify-center shadow-lg shadow-indigo-500/20">
             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -185,10 +180,10 @@ const App: React.FC = () => {
             </svg>
           </div>
           <div>
-            <h1 className="text-sm font-bold text-slate-100 flex items-baseline gap-1.5">
+            <h1 className="text-sm font-bold text-slate-100 flex items-baseline gap-1.5 tracking-tight">
               AllanEcho AI 
             </h1>
-            <p className="text-[6px] text-slate-500 font-black uppercase tracking-[0.2em]">Neural Audio Intelligence</p>
+            <p className="text-[6px] text-slate-500 font-black uppercase tracking-[0.2em]">Neural Intelligence</p>
           </div>
         </div>
         
@@ -199,10 +194,7 @@ const App: React.FC = () => {
               {status}
             </div>
           )}
-          <button 
-            onClick={() => setIsDecoyMode(true)}
-            className="p-1 text-slate-500 hover:text-slate-300 transition-colors"
-          >
+          <button onClick={() => setIsDecoyMode(true)} className="p-1 text-slate-600">
             <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
             </svg>
@@ -210,7 +202,7 @@ const App: React.FC = () => {
         </div>
       </header>
 
-      <main className={`flex-1 overflow-y-auto no-scrollbar max-w-xl w-full mx-auto px-4 pt-1 ${activeTab === 'translate' ? 'overflow-hidden pb-1' : 'pb-24'}`}>
+      <main className={`flex-1 overflow-y-auto no-scrollbar max-w-xl w-full mx-auto px-4 pt-1 ${activeTab === 'translate' ? 'overflow-hidden' : 'pb-32'}`}>
         {activeTab === 'translate' && (
           <div className="h-full flex flex-col animate-in fade-in slide-in-from-bottom-4 duration-400 overflow-hidden">
              <Translator status={status} setStatus={setStatus} />
@@ -220,30 +212,19 @@ const App: React.FC = () => {
         {activeTab === 'record' && (
           <div className="h-full flex flex-col items-center justify-center space-y-4 animate-in fade-in zoom-in-95 duration-500">
             <Recorder onRecordingComplete={handleRecordingComplete} status={status} />
-            <div className="w-full bg-slate-900/50 p-4 rounded-3xl border border-slate-800/50 backdrop-blur-sm text-center">
-              <h3 className="text-slate-200 text-xs font-semibold mb-1">Neural Core Active</h3>
-              <p className="text-slate-500 text-[10px] leading-relaxed max-w-[200px] mx-auto">
-                High-efficiency encoding enabled. Voice data is processed with Gemini-3-Flash for rapid summaries.
-              </p>
-            </div>
           </div>
         )}
 
         {activeTab === 'library' && (
           <div className="animate-in fade-in slide-in-from-bottom-4 duration-400">
             <div className="mb-3 flex items-center justify-between px-2">
-              <h2 className="text-[9px] font-black text-slate-500 uppercase tracking-[0.2em]">Stored Intelligence</h2>
-              <span className="text-[9px] font-bold text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded-full border border-indigo-500/20">{memos.length} ANALYZED</span>
+              <h2 className="text-[9px] font-black text-slate-500 uppercase tracking-[0.2em]">Storage</h2>
+              <span className="text-[9px] font-bold text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded-full border border-indigo-500/20">{memos.length} FILES</span>
             </div>
             <div className="space-y-2 pb-6">
               {memos.length === 0 ? (
                 <div className="text-center py-16 bg-slate-900/30 rounded-3xl border border-dashed border-slate-800">
-                  <div className="inline-block p-3 bg-slate-900 rounded-full mb-2 border border-slate-800">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-slate-700" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z" />
-                    </svg>
-                  </div>
-                  <p className="text-slate-500 text-xs font-medium">Memory bank empty.</p>
+                  <p className="text-slate-600 text-xs font-medium">Memory bank empty.</p>
                 </div>
               ) : (
                 memos.map(memo => (
@@ -255,27 +236,22 @@ const App: React.FC = () => {
         )}
 
         {activeTab === 'settings' && (
-          <div className="animate-in fade-in slide-in-from-bottom-4 duration-300 bg-slate-900/80 rounded-3xl p-5 border border-slate-800 shadow-2xl">
-            <h2 className="text-base font-bold text-slate-100 mb-1">System Config</h2>
-            <p className="text-slate-500 text-[10px] mb-4">Optimized for efficient audio storage.</p>
-            <div className="space-y-2">
-              <div className="p-3 bg-slate-950/50 rounded-xl flex justify-between items-center border border-slate-800/50">
-                <span className="text-[10px] font-semibold text-slate-400">Total Footprint</span>
-                <span className="text-[9px] font-bold text-indigo-400 bg-indigo-500/10 px-2 py-1 rounded-lg border border-indigo-500/20 tracking-tighter">~{(memos.length * 0.25).toFixed(1)} MB</span>
-              </div>
-            </div>
-            <div className="mt-6 text-center">
-                <p className="text-[8px] text-slate-700 font-bold uppercase tracking-widest">Version 1.1.0-Dark</p>
+          <div className="animate-in fade-in slide-in-from-bottom-4 duration-300 bg-slate-900/80 rounded-3xl p-6 border border-slate-800">
+            <h2 className="text-base font-bold text-slate-100 mb-1">Configuration</h2>
+            <p className="text-slate-500 text-[10px] mb-4 uppercase tracking-widest">Optimized for iPhone 16 Pro Max</p>
+            <div className="p-3 bg-slate-950/50 rounded-xl flex justify-between items-center border border-slate-800/50">
+                <span className="text-[10px] font-semibold text-slate-400">Cache Usage</span>
+                <span className="text-[9px] font-bold text-indigo-400 bg-indigo-500/10 px-2 py-1 rounded-lg border border-indigo-500/20">~{(memos.length * 0.25).toFixed(1)} MB</span>
             </div>
           </div>
         )}
       </main>
       
-      {/* Optimized footer for iPhone 16 Pro gesture area */}
-      <footer className="flex-none bg-slate-950/90 backdrop-blur-2xl border-t border-slate-900/50 flex items-center justify-around z-50 px-2 pt-2 pb-[max(1rem,env(safe-area-inset-bottom))] touch-auto">
-        <button onClick={() => setActiveTab('translate')} className={`flex flex-col items-center gap-0.5 transition-all flex-1 relative ${activeTab === 'translate' ? 'text-indigo-400 scale-105' : 'text-slate-600 hover:text-slate-400'}`}>
-          {activeTab === 'translate' && <div className="absolute -top-2 w-8 h-0.5 bg-indigo-500 rounded-full shadow-[0_0_8px_#6366f1]"></div>}
-          <div className="p-1">
+      {/* Dynamic Safe Area Footer */}
+      <footer className="flex-none bg-slate-950/95 backdrop-blur-3xl border-t border-slate-900/50 flex items-center justify-around z-50 px-2 pt-2 pb-[max(1.5rem,env(safe-area-inset-bottom))] shadow-[0_-10px_40px_rgba(0,0,0,0.5)]">
+        <button onClick={() => setActiveTab('translate')} className={`flex flex-col items-center gap-0.5 transition-all flex-1 relative ${activeTab === 'translate' ? 'text-indigo-400' : 'text-slate-600'}`}>
+          {activeTab === 'translate' && <div className="absolute -top-2 w-8 h-0.5 bg-indigo-500 rounded-full shadow-[0_0_12px_#6366f1]"></div>}
+          <div className="p-1.5">
             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10M12.751 5C11.783 10.77 8.07 15.61 3 18.129" />
             </svg>
@@ -283,9 +259,9 @@ const App: React.FC = () => {
           <span className="text-[6px] font-black uppercase tracking-widest">Translate</span>
         </button>
 
-        <button onClick={() => setActiveTab('record')} className={`flex flex-col items-center gap-0.5 transition-all flex-1 relative ${activeTab === 'record' ? 'text-indigo-400 scale-105' : 'text-slate-600 hover:text-slate-400'}`}>
-          {activeTab === 'record' && <div className="absolute -top-2 w-8 h-0.5 bg-indigo-500 rounded-full shadow-[0_0_8px_#6366f1]"></div>}
-          <div className="p-1">
+        <button onClick={() => setActiveTab('record')} className={`flex flex-col items-center gap-0.5 transition-all flex-1 relative ${activeTab === 'record' ? 'text-indigo-400' : 'text-slate-600'}`}>
+          {activeTab === 'record' && <div className="absolute -top-2 w-8 h-0.5 bg-indigo-500 rounded-full shadow-[0_0_12px_#6366f1]"></div>}
+          <div className="p-1.5">
             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-20a3 3 0 00-3 3v10a3 3 0 003 3 3 3 0 003-3V5a3 3 0 00-3-3z" />
             </svg>
@@ -293,9 +269,9 @@ const App: React.FC = () => {
           <span className="text-[6px] font-black uppercase tracking-widest">Memo</span>
         </button>
         
-        <button onClick={() => setActiveTab('library')} className={`flex flex-col items-center gap-0.5 transition-all flex-1 relative ${activeTab === 'library' ? 'text-indigo-400 scale-105' : 'text-slate-600 hover:text-slate-400'}`}>
-          {activeTab === 'library' && <div className="absolute -top-2 w-8 h-0.5 bg-indigo-500 rounded-full shadow-[0_0_8px_#6366f1]"></div>}
-          <div className="p-1">
+        <button onClick={() => setActiveTab('library')} className={`flex flex-col items-center gap-0.5 transition-all flex-1 relative ${activeTab === 'library' ? 'text-indigo-400' : 'text-slate-600'}`}>
+          {activeTab === 'library' && <div className="absolute -top-2 w-8 h-0.5 bg-indigo-500 rounded-full shadow-[0_0_12px_#6366f1]"></div>}
+          <div className="p-1.5">
             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
             </svg>
@@ -303,9 +279,9 @@ const App: React.FC = () => {
           <span className="text-[6px] font-black uppercase tracking-widest">Library</span>
         </button>
         
-        <button onClick={() => setActiveTab('settings')} className={`flex flex-col items-center gap-0.5 transition-all flex-1 relative ${activeTab === 'settings' ? 'text-indigo-400 scale-105' : 'text-slate-600 hover:text-slate-400'}`}>
-          {activeTab === 'settings' && <div className="absolute -top-2 w-8 h-0.5 bg-indigo-500 rounded-full shadow-[0_0_8px_#6366f1]"></div>}
-          <div className="p-1">
+        <button onClick={() => setActiveTab('settings')} className={`flex flex-col items-center gap-0.5 transition-all flex-1 relative ${activeTab === 'settings' ? 'text-indigo-400' : 'text-slate-600'}`}>
+          {activeTab === 'settings' && <div className="absolute -top-2 w-8 h-0.5 bg-indigo-500 rounded-full shadow-[0_0_12px_#6366f1]"></div>}
+          <div className="p-1.5">
             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
             </svg>
