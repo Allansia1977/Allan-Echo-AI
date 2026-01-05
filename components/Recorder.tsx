@@ -41,7 +41,6 @@ const Recorder: React.FC<RecorderProps> = ({ onRecordingComplete, status }) => {
 
   const startRecording = async () => {
     try {
-      // Step 1: Warm up the audio engine (Critical for iOS)
       await initAudioEngine();
 
       const stream = await navigator.mediaDevices.getUserMedia({ 
@@ -53,13 +52,12 @@ const Recorder: React.FC<RecorderProps> = ({ onRecordingComplete, status }) => {
       });
       streamRef.current = stream;
       
-      // Step 2: Select the correct codec for the OS
       const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
       const mimeType = isIOS ? 'audio/mp4' : (MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/mp4');
         
       const mediaRecorder = new MediaRecorder(stream, { 
         mimeType,
-        audioBitsPerSecond: 64000 
+        audioBitsPerSecond: 32000 // Optimized for upload
       });
       
       mediaRecorderRef.current = mediaRecorder;
@@ -72,26 +70,33 @@ const Recorder: React.FC<RecorderProps> = ({ onRecordingComplete, status }) => {
       mediaRecorder.onstop = () => {
         if (chunksRef.current.length > 0) {
           const audioBlob = new Blob(chunksRef.current, { type: mimeType });
-          onRecordingComplete(audioBlob, seconds);
+          // Safari 0-byte check
+          if (audioBlob.size > 1500) {
+             onRecordingComplete(audioBlob, seconds);
+          } else {
+             console.warn("Audio captured was empty (Safari bug)");
+          }
         }
         stream.getTracks().forEach(track => track.stop());
       };
 
-      // Step 3: Start with small timeslice for better mobile stability
       mediaRecorder.start(250);
       setIsRecording(true);
     } catch (err) {
       console.error("Mic access denied:", err);
-      alert("Please check Settings > Safari > Microphone on your iPhone.");
+      alert("Please allow microphone access in iPhone Settings.");
     }
   };
 
   const stopRecording = () => {
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-      // Flush buffer for iOS
-      mediaRecorderRef.current.requestData();
-      mediaRecorderRef.current.stop();
-      setIsRecording(false);
+      try {
+        mediaRecorderRef.current.requestData();
+        mediaRecorderRef.current.stop();
+        setIsRecording(false);
+      } catch (e) {
+        console.error(e);
+      }
     }
   };
 

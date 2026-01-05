@@ -46,15 +46,15 @@ const Translator: React.FC<TranslatorProps> = ({ status, setStatus }) => {
 
   const initAudioContext = async () => {
     try {
+      const AudioContextClass = (window as any).AudioContext || (window as any).webkitAudioContext;
       if (!audioContextRef.current) {
-        const AudioContextClass = (window as any).AudioContext || (window as any).webkitAudioContext;
         audioContextRef.current = new AudioContextClass();
       }
       if (audioContextRef.current?.state === 'suspended') {
         await audioContextRef.current.resume();
       }
     } catch (e) {
-      console.error("AudioContext Init Error:", e);
+      console.warn("AudioContext Context Error", e);
     }
   };
 
@@ -81,9 +81,8 @@ const Translator: React.FC<TranslatorProps> = ({ status, setStatus }) => {
           }
         } catch (err) {
           if (currentRequestId === requestIdRef.current) {
-            console.error("Re-translation error:", err);
             setStatus(ProcessingStatus.ERROR);
-            setErrorMessage("Translation failed. Try again.");
+            setErrorMessage("Translation Failed");
             setTimeout(() => setStatus(ProcessingStatus.IDLE), 2000);
           }
         }
@@ -100,7 +99,7 @@ const Translator: React.FC<TranslatorProps> = ({ status, setStatus }) => {
     await initAudioContext();
 
     if (!navigator.onLine) {
-        setErrorMessage("Network Offline");
+        setErrorMessage("Offline");
         setStatus(ProcessingStatus.ERROR);
         resetUIState();
         return;
@@ -125,12 +124,10 @@ const Translator: React.FC<TranslatorProps> = ({ status, setStatus }) => {
       activeStreamRef.current = stream;
       
       const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
-      // Force standard audio/mp4 for iOS to ensure compatibility with Gemini
       const mimeType = isIOS ? 'audio/mp4' : (MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : 'audio/webm');
       
       const mediaRecorder = new MediaRecorder(stream, { 
         mimeType, 
-        // Lower bitrate for mobile (32kbps) to improve upload reliability on iPhone
         audioBitsPerSecond: 32000 
       });
       mediaRecorderRef.current = mediaRecorder;
@@ -149,25 +146,29 @@ const Translator: React.FC<TranslatorProps> = ({ status, setStatus }) => {
           activeStreamRef.current = null;
         }
 
-        if (pressDuration > 400 && chunksRef.current.length > 0) {
+        // Validate that we have enough data and time for a real recording
+        if (pressDuration > 500 && chunksRef.current.length > 0) {
           const finalMime = chunksRef.current[0].type || mimeType;
           const audioBlob = new Blob(chunksRef.current, { type: finalMime });
           
-          if (audioBlob.size > 500) { 
+          // iPhone Safari 0-byte header check (usually < 1000 bytes for empty MP4)
+          if (audioBlob.size > 1500) { 
             await handleTranslation(audioBlob);
           } else {
-            setErrorMessage("Audio capture too short.");
+            setErrorMessage("Empty Audio - Speak Louder");
+            setStatus(ProcessingStatus.ERROR);
             resetUIState();
+            setTimeout(() => setStatus(ProcessingStatus.IDLE), 2000);
           }
         } else {
           resetUIState();
         }
       };
       
-      mediaRecorder.start(250);
+      mediaRecorder.start(200);
     } catch (err) {
       console.error("Mic error:", err);
-      setErrorMessage("Microphone access denied.");
+      setErrorMessage("Mic Permission Required");
       setStatus(ProcessingStatus.ERROR);
       resetUIState();
     }
@@ -187,6 +188,8 @@ const Translator: React.FC<TranslatorProps> = ({ status, setStatus }) => {
     
     if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') { 
       try { 
+        // Flush final chunk for iOS
+        mediaRecorderRef.current.requestData();
         mediaRecorderRef.current.stop(); 
       } catch(e){
         console.error("Stop error:", e);
@@ -214,15 +217,13 @@ const Translator: React.FC<TranslatorProps> = ({ status, setStatus }) => {
         const result = reader.result as string;
         if (!result) {
            setStatus(ProcessingStatus.ERROR);
-           setErrorMessage("Format Error");
+           setErrorMessage("Encoding Error");
            return;
         }
         const base64 = result.split(',')[1];
         setUploadProgress(false);
         try {
-          // Explicitly pass audio/mp4 if on iOS to avoid Gemini processing errors
-          const apiMime = blob.type || 'audio/mp4';
-          const data = await translateAudio(base64, apiMime, currentTarget);
+          const data = await translateAudio(base64, blob.type, currentTarget);
           if (currentRequestId === requestIdRef.current) {
             setTranslationData(data);
             lastTranslatedToRef.current = currentTarget;
@@ -230,9 +231,15 @@ const Translator: React.FC<TranslatorProps> = ({ status, setStatus }) => {
           }
         } catch (apiErr: any) {
           if (currentRequestId === requestIdRef.current) {
-            console.error("API Error:", apiErr);
+            console.error("Gemini API Error:", apiErr);
             setStatus(ProcessingStatus.ERROR);
-            setErrorMessage(apiErr.message?.includes('429') ? "Limit Reached" : "Neural Link Error");
+            // More specific error labels for the user
+            const errMsg = apiErr.message || "";
+            if (errMsg.includes('400')) setErrorMessage("Format Rejected");
+            else if (errMsg.includes('429')) setErrorMessage("Too Many Requests");
+            else if (errMsg.includes('500')) setErrorMessage("Gemini Offline");
+            else setErrorMessage("AI Link Failed");
+            
             setTimeout(() => setStatus(ProcessingStatus.IDLE), 3000);
           }
         }
@@ -241,7 +248,7 @@ const Translator: React.FC<TranslatorProps> = ({ status, setStatus }) => {
     } catch (err) {
       if (currentRequestId === requestIdRef.current) {
         setStatus(ProcessingStatus.ERROR);
-        setErrorMessage("Local Processing Error");
+        setErrorMessage("Upload Failed");
         setTimeout(() => setStatus(ProcessingStatus.IDLE), 2000);
       }
     }
@@ -273,9 +280,9 @@ const Translator: React.FC<TranslatorProps> = ({ status, setStatus }) => {
           </div>
           <div className="flex-1 overflow-y-auto no-scrollbar text-sm text-slate-400 leading-snug font-medium italic">
             {errorMessage ? (
-              <span className="text-red-500 font-bold uppercase text-[10px] tracking-tight">{errorMessage}</span>
+              <span className="text-red-500 font-bold uppercase text-[10px] tracking-tight animate-pulse">{errorMessage}</span>
             ) : (
-              translationData?.original || (isBusy && !translationData ? (uploadProgress ? "Syncing..." : "Analysing...") : isPressing ? "Speak clearly into the microphone." : "Waiting for audio...")
+              translationData?.original || (isBusy && !translationData ? (uploadProgress ? "Uploading..." : "Analysing...") : isPressing ? "Speak clearly into the microphone." : "Waiting for audio...")
             )}
           </div>
         </div>

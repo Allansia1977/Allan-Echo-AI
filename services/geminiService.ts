@@ -4,15 +4,21 @@ const getAIClient = () => {
   return new GoogleGenAI({ apiKey: process.env.API_KEY });
 };
 
-// Normalize MIME types for Gemini API compatibility (especially for mobile browsers)
+/**
+ * Normalizes MIME types for Gemini API.
+ * iOS Safari typically produces 'audio/mp4' or 'audio/x-m4a'.
+ * Gemini prefers 'audio/mp4' for these formats.
+ */
 const normalizeMimeType = (mimeType: string): string => {
   const lower = mimeType.toLowerCase();
   if (lower.includes('webm')) return 'audio/webm';
-  // Safari on iOS often uses x-m4a or just mp4
-  if (lower.includes('mp4') || lower.includes('m4a') || lower.includes('x-m4a') || lower.includes('aac')) return 'audio/mp4';
+  // Standardize all Apple formats to audio/mp4 for Gemini compatibility
+  if (lower.includes('mp4') || lower.includes('m4a') || lower.includes('x-m4a') || lower.includes('aac')) {
+    return 'audio/mp4';
+  }
   if (lower.includes('mpeg') || lower.includes('mp3')) return 'audio/mpeg';
   if (lower.includes('wav')) return 'audio/wav';
-  return 'audio/mp4'; // Default fallback for mobile
+  return 'audio/mp4'; // Robust default for mobile
 };
 
 export const transcribeAudio = async (base64Audio: string, mimeType: string): Promise<string> => {
@@ -39,9 +45,10 @@ export const transcribeAudio = async (base64Audio: string, mimeType: string): Pr
       }
     });
     return response.text?.trim() || "Transcription produced no text.";
-  } catch (error) {
+  } catch (error: any) {
     console.error("Transcription API error:", error);
-    throw error;
+    const msg = error.message || "Unknown API Error";
+    throw new Error(`TRANSCRIPTION_FAILED: ${msg}`);
   }
 };
 
@@ -78,7 +85,7 @@ export const translateAudio = async (base64Audio: string, mimeType: string, targ
           },
           {
             text: `Detect the spoken language. 
-            1. Transcribe the audio verbatim in its original spoken language (e.g. if I speak Thai, the "original" field must be in Thai). 
+            1. Transcribe the audio verbatim in its original spoken language. 
             2. Translate that transcription into ${targetLanguage}. 
             Return the result as a JSON object with keys "original" and "translated".`
           }
@@ -91,11 +98,11 @@ export const translateAudio = async (base64Audio: string, mimeType: string, targ
           properties: {
             original: { 
               type: Type.STRING,
-              description: "Verbatim transcription of the audio in its original spoken language."
+              description: "Verbatim transcription of the audio."
             },
             translated: { 
               type: Type.STRING, 
-              description: "The translation into the requested target language."
+              description: "The translation."
             }
           },
           required: ["original", "translated"]
@@ -108,12 +115,12 @@ export const translateAudio = async (base64Audio: string, mimeType: string, targ
     try {
       return JSON.parse(text);
     } catch (e) {
-      console.warn("JSON parse failed, attempting fallback extraction", text);
-      return { original: "Audio processed (format error)", translated: text.substring(0, 100) };
+      return { original: "Audio processed", translated: text };
     }
-  } catch (error) {
+  } catch (error: any) {
     console.error("Translate Audio API error:", error);
-    throw error;
+    const msg = error.message || "Unknown API Error";
+    throw new Error(`API_REJECTED: ${msg}`);
   }
 };
 
