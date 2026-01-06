@@ -1,12 +1,14 @@
+
 import React, { useState, useRef, useEffect } from 'react';
-import { ProcessingStatus } from '../types';
+import { ProcessingStatus, LogEntry } from '../types';
 
 interface RecorderProps {
   onRecordingComplete: (blob: Blob, duration: number) => void;
   status: ProcessingStatus;
+  addLog: (entry: Omit<LogEntry, 'id' | 'timestamp'>) => void;
 }
 
-const Recorder: React.FC<RecorderProps> = ({ onRecordingComplete, status }) => {
+const Recorder: React.FC<RecorderProps> = ({ onRecordingComplete, status, addLog }) => {
   const [isRecording, setIsRecording] = useState(false);
   const [seconds, setSeconds] = useState(0);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -30,12 +32,16 @@ const Recorder: React.FC<RecorderProps> = ({ onRecordingComplete, status }) => {
   }, [isRecording]);
 
   const initAudioEngine = async () => {
-    if (!audioContextRef.current) {
+    try {
       const AudioContextClass = (window as any).AudioContext || (window as any).webkitAudioContext;
-      audioContextRef.current = new AudioContextClass();
-    }
-    if (audioContextRef.current?.state === 'suspended') {
-      await audioContextRef.current.resume();
+      if (!audioContextRef.current) {
+        audioContextRef.current = new AudioContextClass();
+      }
+      if (audioContextRef.current?.state === 'suspended') {
+        await audioContextRef.current.resume();
+      }
+    } catch (e: any) {
+      addLog({ type: 'WARNING', source: 'Recorder', message: 'AudioContext engine failed to wake', details: e.message });
     }
   };
 
@@ -57,7 +63,7 @@ const Recorder: React.FC<RecorderProps> = ({ onRecordingComplete, status }) => {
         
       const mediaRecorder = new MediaRecorder(stream, { 
         mimeType,
-        audioBitsPerSecond: 32000 // Optimized for upload
+        audioBitsPerSecond: 32000
       });
       
       mediaRecorderRef.current = mediaRecorder;
@@ -70,11 +76,12 @@ const Recorder: React.FC<RecorderProps> = ({ onRecordingComplete, status }) => {
       mediaRecorder.onstop = () => {
         if (chunksRef.current.length > 0) {
           const audioBlob = new Blob(chunksRef.current, { type: mimeType });
-          // Safari 0-byte check
+          addLog({ type: 'INFO', source: 'Recorder', message: 'Recording finished', details: { size: audioBlob.size, type: mimeType } });
+          
           if (audioBlob.size > 1500) {
              onRecordingComplete(audioBlob, seconds);
           } else {
-             console.warn("Audio captured was empty (Safari bug)");
+             addLog({ type: 'ERROR', source: 'Recorder', message: 'Captured recording too small', details: { size: audioBlob.size } });
           }
         }
         stream.getTracks().forEach(track => track.stop());
@@ -82,8 +89,9 @@ const Recorder: React.FC<RecorderProps> = ({ onRecordingComplete, status }) => {
 
       mediaRecorder.start(250);
       setIsRecording(true);
-    } catch (err) {
-      console.error("Mic access denied:", err);
+      addLog({ type: 'INFO', source: 'Recorder', message: 'Recording started' });
+    } catch (err: any) {
+      addLog({ type: 'ERROR', source: 'Recorder', message: 'Mic permission or init error', details: err.message });
       alert("Please allow microphone access in iPhone Settings.");
     }
   };
@@ -94,8 +102,8 @@ const Recorder: React.FC<RecorderProps> = ({ onRecordingComplete, status }) => {
         mediaRecorderRef.current.requestData();
         mediaRecorderRef.current.stop();
         setIsRecording(false);
-      } catch (e) {
-        console.error(e);
+      } catch (e: any) {
+        addLog({ type: 'ERROR', source: 'Recorder', message: 'Recorder stop failed', details: e.message });
       }
     }
   };

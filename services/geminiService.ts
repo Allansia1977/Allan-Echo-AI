@@ -1,3 +1,4 @@
+
 import { GoogleGenAI, Type } from "@google/genai";
 
 const getAIClient = () => {
@@ -48,7 +49,7 @@ export const transcribeAudio = async (base64Audio: string, mimeType: string): Pr
   } catch (error: any) {
     console.error("Transcription API error:", error);
     const msg = error.message || "Unknown API Error";
-    throw new Error(`TRANSCRIPTION_FAILED: ${msg}`);
+    throw new Error(`TRANSCRIPTION_FAILED: ${msg} (Mime: ${normalizedMime})`);
   }
 };
 
@@ -63,9 +64,9 @@ export const summarizeTranscript = async (transcript: string): Promise<string> =
       }
     });
     return response.text?.trim() || "Summary failed.";
-  } catch (error) {
+  } catch (error: any) {
     console.error("Summarization API error:", error);
-    return "Summary unavailable.";
+    throw new Error(`SUMMARIZATION_FAILED: ${error.message}`);
   }
 };
 
@@ -120,7 +121,7 @@ export const translateAudio = async (base64Audio: string, mimeType: string, targ
   } catch (error: any) {
     console.error("Translate Audio API error:", error);
     const msg = error.message || "Unknown API Error";
-    throw new Error(`API_REJECTED: ${msg}`);
+    throw new Error(`API_REJECTED: ${msg} (Mime: ${normalizedMime}, Size: ${Math.round(base64Audio.length * 0.75 / 1024)}KB)`);
   }
 };
 
@@ -135,8 +136,8 @@ export const translateText = async (text: string, targetLanguage: string): Promi
       }
     });
     return response.text?.trim() || "Translation failed.";
-  } catch (error) {
+  } catch (error: any) {
     console.error("Translate Text API error:", error);
-    throw error;
+    throw new Error(`TEXT_TRANSLATION_FAILED: ${error.message}`);
   }
 };

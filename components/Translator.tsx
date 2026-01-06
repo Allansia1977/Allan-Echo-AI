@@ -1,5 +1,6 @@
+
 import React, { useState, useRef, useEffect } from 'react';
-import { ProcessingStatus } from '../types';
+import { ProcessingStatus, LogEntry } from '../types';
 import { translateAudio, translateText } from '../services/geminiService';
 
 const LANGUAGES = [
@@ -16,9 +17,10 @@ const LANGUAGES = [
 interface TranslatorProps {
   status: ProcessingStatus;
   setStatus: (status: ProcessingStatus) => void;
+  addLog: (entry: Omit<LogEntry, 'id' | 'timestamp'>) => void;
 }
 
-const Translator: React.FC<TranslatorProps> = ({ status, setStatus }) => {
+const Translator: React.FC<TranslatorProps> = ({ status, setStatus, addLog }) => {
   const [isPressing, setIsPressing] = useState(false);
   const [targetLang, setTargetLang] = useState('English');
   const [translationData, setTranslationData] = useState<{original: string, translated: string} | null>(null);
@@ -42,6 +44,7 @@ const Translator: React.FC<TranslatorProps> = ({ status, setStatus }) => {
     setStatus(ProcessingStatus.IDLE);
     setUploadProgress(false);
     setErrorMessage(null);
+    addLog({ type: 'INFO', source: 'Translator', message: 'User cancelled translation' });
   };
 
   const initAudioContext = async () => {
@@ -79,10 +82,11 @@ const Translator: React.FC<TranslatorProps> = ({ status, setStatus }) => {
             lastTranslatedToRef.current = currentTarget;
             setStatus(ProcessingStatus.IDLE);
           }
-        } catch (err) {
+        } catch (err: any) {
           if (currentRequestId === requestIdRef.current) {
             setStatus(ProcessingStatus.ERROR);
             setErrorMessage("Translation Failed");
+            addLog({ type: 'ERROR', source: 'Translator API', message: 'Text translation failed', details: err.message });
             setTimeout(() => setStatus(ProcessingStatus.IDLE), 2000);
           }
         }
@@ -101,6 +105,7 @@ const Translator: React.FC<TranslatorProps> = ({ status, setStatus }) => {
     if (!navigator.onLine) {
         setErrorMessage("Offline");
         setStatus(ProcessingStatus.ERROR);
+        addLog({ type: 'ERROR', source: 'Translator', message: 'No internet connection' });
         resetUIState();
         return;
     }
@@ -146,17 +151,18 @@ const Translator: React.FC<TranslatorProps> = ({ status, setStatus }) => {
           activeStreamRef.current = null;
         }
 
-        // Validate that we have enough data and time for a real recording
         if (pressDuration > 500 && chunksRef.current.length > 0) {
           const finalMime = chunksRef.current[0].type || mimeType;
           const audioBlob = new Blob(chunksRef.current, { type: finalMime });
           
-          // iPhone Safari 0-byte header check (usually < 1000 bytes for empty MP4)
+          addLog({ type: 'INFO', source: 'Translator', message: 'Voice captured', details: { size: audioBlob.size, type: finalMime, duration: pressDuration } });
+
           if (audioBlob.size > 1500) { 
             await handleTranslation(audioBlob);
           } else {
-            setErrorMessage("Empty Audio - Speak Louder");
+            setErrorMessage("Empty Audio");
             setStatus(ProcessingStatus.ERROR);
+            addLog({ type: 'WARNING', source: 'Translator', message: 'Audio blob size suspiciously small', details: { size: audioBlob.size } });
             resetUIState();
             setTimeout(() => setStatus(ProcessingStatus.IDLE), 2000);
           }
@@ -166,10 +172,11 @@ const Translator: React.FC<TranslatorProps> = ({ status, setStatus }) => {
       };
       
       mediaRecorder.start(200);
-    } catch (err) {
+    } catch (err: any) {
       console.error("Mic error:", err);
-      setErrorMessage("Mic Permission Required");
+      setErrorMessage("Mic Error");
       setStatus(ProcessingStatus.ERROR);
+      addLog({ type: 'ERROR', source: 'Translator', message: 'Mic initialization failed', details: err.message });
       resetUIState();
     }
   };
@@ -188,11 +195,10 @@ const Translator: React.FC<TranslatorProps> = ({ status, setStatus }) => {
     
     if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') { 
       try { 
-        // Flush final chunk for iOS
         mediaRecorderRef.current.requestData();
         mediaRecorderRef.current.stop(); 
-      } catch(e){
-        console.error("Stop error:", e);
+      } catch(e: any){
+        addLog({ type: 'ERROR', source: 'Translator', message: 'MediaRecorder stop error', details: e.message });
       } 
     }
     
@@ -218,6 +224,7 @@ const Translator: React.FC<TranslatorProps> = ({ status, setStatus }) => {
         if (!result) {
            setStatus(ProcessingStatus.ERROR);
            setErrorMessage("Encoding Error");
+           addLog({ type: 'ERROR', source: 'Translator', message: 'FileReader failed to encode blob' });
            return;
         }
         const base64 = result.split(',')[1];
@@ -231,24 +238,19 @@ const Translator: React.FC<TranslatorProps> = ({ status, setStatus }) => {
           }
         } catch (apiErr: any) {
           if (currentRequestId === requestIdRef.current) {
-            console.error("Gemini API Error:", apiErr);
             setStatus(ProcessingStatus.ERROR);
-            // More specific error labels for the user
-            const errMsg = apiErr.message || "";
-            if (errMsg.includes('400')) setErrorMessage("Format Rejected");
-            else if (errMsg.includes('429')) setErrorMessage("Too Many Requests");
-            else if (errMsg.includes('500')) setErrorMessage("Gemini Offline");
-            else setErrorMessage("AI Link Failed");
-            
+            setErrorMessage("API Rejected");
+            addLog({ type: 'ERROR', source: 'Gemini API', message: 'Audio translation failed', details: apiErr.message });
             setTimeout(() => setStatus(ProcessingStatus.IDLE), 3000);
           }
         }
       };
       reader.readAsDataURL(blob);
-    } catch (err) {
+    } catch (err: any) {
       if (currentRequestId === requestIdRef.current) {
         setStatus(ProcessingStatus.ERROR);
         setErrorMessage("Upload Failed");
+        addLog({ type: 'ERROR', source: 'Translator', message: 'Blob upload sequence failed', details: err.message });
         setTimeout(() => setStatus(ProcessingStatus.IDLE), 2000);
       }
     }
@@ -270,7 +272,6 @@ const Translator: React.FC<TranslatorProps> = ({ status, setStatus }) => {
       </div>
 
       <div className="flex-1 flex flex-col gap-1.5 min-h-0 overflow-hidden">
-        {/* Input Area */}
         <div className="flex-[0.4] min-h-0 bg-slate-900/40 border border-slate-800/50 rounded-2xl p-2.5 flex flex-col shadow-inner shrink-0 overflow-hidden">
           <div className="flex items-center gap-1.5 mb-1 flex-none">
             <div className={`w-1.5 h-1.5 rounded-full ${isPressing ? 'bg-red-500 animate-pulse' : 'bg-slate-600'}`}></div>
@@ -287,7 +288,6 @@ const Translator: React.FC<TranslatorProps> = ({ status, setStatus }) => {
           </div>
         </div>
 
-        {/* Result Area */}
         <div className="flex-[0.6] min-h-0 bg-indigo-500/5 border border-indigo-500/10 rounded-2xl p-3.5 flex flex-col shadow-lg overflow-hidden">
           <div className="flex items-center gap-1.5 mb-1 flex-none">
             <div className={`w-1.5 h-1.5 bg-indigo-500 rounded-full ${isBusy ? 'animate-pulse' : ''}`}></div>

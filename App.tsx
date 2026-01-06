@@ -1,5 +1,6 @@
+
 import React, { useState, useEffect, useRef } from 'react';
-import { Memo, ProcessingStatus, Tab } from './types';
+import { Memo, ProcessingStatus, Tab, LogEntry } from './types';
 import Recorder from './components/Recorder';
 import MemoCard from './components/MemoCard';
 import Translator from './components/Translator';
@@ -12,8 +13,20 @@ const App: React.FC = () => {
   const [isDecoyMode, setIsDecoyMode] = useState(false);
   const [hasMicPermission, setHasMicPermission] = useState<boolean | null>(null);
   const [currentTime, setCurrentTime] = useState(new Date());
+  const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [showLogs, setShowLogs] = useState(false);
 
   const lastTapRef = useRef<{ count: number; time: number }>({ count: 0, time: 0 });
+
+  const addLog = (entry: Omit<LogEntry, 'id' | 'timestamp'>) => {
+    const newLog: LogEntry = {
+      ...entry,
+      id: crypto.randomUUID(),
+      timestamp: Date.now(),
+    };
+    setLogs(prev => [newLog, ...prev].slice(0, 50)); // Keep last 50
+    console.log(`[${entry.source}] ${entry.message}`, entry.details);
+  };
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -32,7 +45,7 @@ const App: React.FC = () => {
         );
         setMemos(cleaned);
       } catch (e) {
-        console.error("Error loading memos", e);
+        addLog({ type: 'ERROR', source: 'System', message: 'Failed to load memos from storage' });
       }
     }
   }, []);
@@ -44,7 +57,7 @@ const App: React.FC = () => {
       );
       localStorage.setItem('echo_mind_memos', JSON.stringify(toSave));
     } catch (e) {
-      console.warn("Storage limit might have been reached", e);
+      addLog({ type: 'WARNING', source: 'Storage', message: 'Storage limit reached' });
     }
   }, [memos]);
 
@@ -59,9 +72,10 @@ const App: React.FC = () => {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       stream.getTracks().forEach(t => t.stop());
       setHasMicPermission(true);
-    } catch (err) {
+      addLog({ type: 'INFO', source: 'Permission', message: 'Microphone access granted' });
+    } catch (err: any) {
       setHasMicPermission(false);
-      console.error("Permission request failed:", err);
+      addLog({ type: 'ERROR', source: 'Permission', message: err.message || 'Mic access denied' });
     }
   };
 
@@ -99,6 +113,8 @@ const App: React.FC = () => {
     if (duration < 0.2 && blob.size === 0) return;
     const memoId = crypto.randomUUID();
     const cleanMimeType = blob.type.split(';')[0];
+    addLog({ type: 'INFO', source: 'Recorder', message: 'Processing new memo', details: { size: blob.size, mime: cleanMimeType, duration } });
+    
     try {
       const base64 = await blobToBase64(blob);
       const initialMemo: Memo = {
@@ -114,14 +130,18 @@ const App: React.FC = () => {
       setMemos(prev => [initialMemo, ...prev]);
       setStatus(ProcessingStatus.TRANSCRIBING);
       if (!isDecoyMode) setActiveTab('library');
+      
       const transcript = await transcribeAudio(base64, cleanMimeType);
       setMemos(prev => prev.map(m => m.id === memoId ? { ...m, transcript } : m));
+      
       setStatus(ProcessingStatus.SUMMARIZING);
       const summary = await summarizeTranscript(transcript);
       setMemos(prev => prev.map(m => m.id === memoId ? { ...m, summary, isProcessing: false } : m));
+      
       setStatus(ProcessingStatus.IDLE);
-    } catch (err) {
-      console.error("Processing error:", err);
+      addLog({ type: 'INFO', source: 'Cloud', message: 'Memo processed successfully' });
+    } catch (err: any) {
+      addLog({ type: 'ERROR', source: 'Cloud', message: err.message || 'Memo processing failed', details: err });
       setStatus(ProcessingStatus.ERROR);
       setMemos(prev => prev.map(m => m.id === memoId ? { ...m, isProcessing: false, error: true, summary: "Cloud processing error." } : m));
       setTimeout(() => setStatus(ProcessingStatus.IDLE), 3000);
@@ -170,6 +190,54 @@ const App: React.FC = () => {
         </div>
       )}
 
+      {showLogs && (
+        <div className="fixed inset-0 z-[110] bg-slate-950/95 backdrop-blur-xl flex flex-col p-6 animate-in fade-in zoom-in-95 duration-200">
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-xl font-black text-white flex items-center gap-2">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-red-500" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M12.395 2.553a1 1 0 00-1.4503-.4503l-7 4A1 1 0 004 7v10a1 1 0 001 1h10a1 1 0 001-1V7a1 1 0 00-.605-.911l-3-1.536z" clipRule="evenodd" />
+              </svg>
+              System Logs
+            </h2>
+            <button onClick={() => setShowLogs(false)} className="p-2 text-slate-500 hover:text-white">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+          <div className="flex-1 overflow-y-auto no-scrollbar space-y-3 font-mono">
+            {logs.length === 0 ? (
+              <p className="text-slate-600 text-center py-20">No system events logged.</p>
+            ) : (
+              logs.map(log => (
+                <div key={log.id} className={`p-3 rounded-xl border ${log.type === 'ERROR' ? 'bg-red-500/10 border-red-500/20' : 'bg-slate-900 border-slate-800'}`}>
+                  <div className="flex items-center justify-between mb-1">
+                    <span className={`text-[9px] font-black px-1.5 py-0.5 rounded ${log.type === 'ERROR' ? 'bg-red-500 text-white' : 'bg-slate-800 text-slate-400'}`}>
+                      {log.type}
+                    </span>
+                    <span className="text-[8px] text-slate-600">
+                      {new Date(log.timestamp).toLocaleTimeString()}
+                    </span>
+                  </div>
+                  <div className="text-[10px] text-slate-300 font-bold mb-1">[{log.source}] {log.message}</div>
+                  {log.details && (
+                    <div className="text-[8px] text-slate-500 break-all bg-black/40 p-1.5 rounded">
+                      {JSON.stringify(log.details, null, 2)}
+                    </div>
+                  )}
+                </div>
+              ))
+            )}
+          </div>
+          <button 
+            onClick={() => setLogs([])}
+            className="mt-6 w-full py-3 bg-slate-900 text-slate-400 text-[10px] font-black uppercase tracking-widest rounded-xl border border-slate-800"
+          >
+            Clear Console
+          </button>
+        </div>
+      )}
+
       <header className="flex-none max-w-xl w-full mx-auto px-6 pt-[env(safe-area-inset-top,44px)] pb-1 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 bg-indigo-500 rounded-lg flex items-center justify-center shadow-lg shadow-indigo-500/20">
@@ -185,14 +253,24 @@ const App: React.FC = () => {
           </div>
         </div>
         
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
           {status !== ProcessingStatus.IDLE && (
             <div className={`flex items-center gap-1.5 text-[7px] font-bold px-2 py-0.5 rounded-full border shadow-xl animate-pulse ${status === ProcessingStatus.ERROR ? 'bg-red-500 text-white border-red-400' : 'text-indigo-400 bg-slate-900 border-slate-800'}`}>
               <div className={`w-1 h-1 rounded-full animate-ping ${status === ProcessingStatus.ERROR ? 'bg-white' : 'bg-indigo-500'}`}></div>
               {status}
             </div>
           )}
-          <button onClick={() => setIsDecoyMode(true)} className="p-1 text-slate-600">
+          
+          <button 
+            onClick={() => setShowLogs(true)} 
+            className={`p-2 transition-all ${logs.some(l => l.type === 'ERROR') ? 'text-red-500 animate-pulse' : 'text-slate-600 hover:text-slate-400'}`}
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+          </button>
+
+          <button onClick={() => setIsDecoyMode(true)} className="p-2 text-slate-600 hover:text-slate-400 transition-colors">
             <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
             </svg>
@@ -203,13 +281,13 @@ const App: React.FC = () => {
       <main className={`flex-1 overflow-y-auto no-scrollbar max-w-xl w-full mx-auto px-4 ${activeTab === 'translate' ? 'overflow-hidden flex flex-col' : 'pb-32'}`}>
         {activeTab === 'translate' && (
           <div className="flex-1 flex flex-col min-h-0 animate-in fade-in slide-in-from-bottom-4 duration-400">
-             <Translator status={status} setStatus={setStatus} />
+             <Translator status={status} setStatus={setStatus} addLog={addLog} />
           </div>
         )}
 
         {activeTab === 'record' && (
           <div className="h-full flex flex-col items-center justify-center space-y-4 animate-in fade-in zoom-in-95 duration-500">
-            <Recorder onRecordingComplete={handleRecordingComplete} status={status} />
+            <Recorder onRecordingComplete={handleRecordingComplete} status={status} addLog={addLog} />
           </div>
         )}
 

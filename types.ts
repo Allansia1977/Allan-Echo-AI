@@ -11,6 +11,15 @@ export interface Memo {
   error?: boolean; 
 }
 
+export interface LogEntry {
+  id: string;
+  timestamp: number;
+  type: 'INFO' | 'ERROR' | 'WARNING';
+  source: string;
+  message: string;
+  details?: any;
+}
+
 export enum ProcessingStatus {
   IDLE = 'IDLE',
   RECORDING = 'RECORDING',
